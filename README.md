@@ -14,9 +14,9 @@ cd ~/pill-macos-spike
 
 The existing local 2-pixel default in src/main.cpp is preserved as your uncommitted edit. Use --top-offset 0 for a flush screen-top position or 44 to stack below omacosy. AppKit's menu-bar constraint is overridden for this window only. Nothing changes omacosy, AeroSpace gaps, or launchd.
 
-Hover the clock to widen into workspace dots, date and media preview. Click to pin/open the mixer. Escape, the close button, or an outside click dismisses it. The exit-arrow button quits. Left/Right selects an enabled fader; Up/Down adjusts its local preview value. Mouse dragging works too.
+Hover the clock to widen into workspace dots, date and media preview. Click to pin/open the mixer. Escape, the close button, or an outside click dismisses it. The exit-arrow button quits. Left/Right selects an enabled fader; Up/Down adjusts it. Mouse dragging works too.
 
-Workspace dots and media are placeholders. The mixer is labelled PREVIEW. Brightness, volume and mic faders change only local values, never hardware. Linux vibrance, device selection, DND, keep-awake and night-light controls are disabled.
+Workspace dots and media are placeholders. The speaker fader labelled Volume LIVE controls the real default output when supported, and the first speaker chip toggles mute. Unsupported volume/mute controls are disabled. Brightness and mic remain local previews under the PREVIEW header. Linux vibrance, device selection, DND, keep-awake and night-light controls remain disabled.
 
 ## What is reused
 
@@ -28,15 +28,19 @@ The flame-bead effect, tray, notifications, launcher, settings, recording, wallp
 
 ## Native service checkpoint
 
-PLAN.md tasks 1 and 2 are complete. The omacosy donor revision, local changes,
-service extraction map and Paul Spende's MIT notice are recorded in
-third_party/omacosy. No hardware service code has been copied or connected.
+The Swift/Qt boundary and task 3 Audio implementation are in place. The
+omacosy donor revision, copied Audio ranges and Paul Spende's MIT notice are
+recorded in third_party/omacosy. Both donor licenses are packaged with the app.
 
-The app now loads an in-process Swift library through an Objective-C++ Qt
-adapter. Pill.MacOS 1.0 exports only Bridge.ready, a callback-health property,
-not simulated system state. All visible controls retain their preview/disabled
-behavior. See docs/native-services.md for ownership rules and the proposed
-Audio contract for the next checkpoint.
+Pill.MacOS 1.0 exports Bridge.ready and Audio. Audio uses native notifications,
+reprobes on default-device changes and reports independent read/write support.
+Reads/writes run off the UI thread; drag feedback is separate from observed
+state and a device change cancels the current drag. See docs/native-services.md
+for the contract, recovery policy and verification limits.
+
+Real-device reads have passed. Real writes/restoration, hotplug and the updated
+native-input harness remain unverified. The running user instance was left
+untouched; restart it yourself to load this version. Brightness is the next task.
 
 The build generates the Swift library/header under build/native and packages
 the library inside PillSpike.app/Contents/Frameworks. It supports one native
@@ -63,13 +67,28 @@ Anchor declarations are validated at startup. The host supports one bounded top 
 ./scripts/native-input-test.sh
 ```
 
-The first command runs Swift/Qt callback and teardown tests, geometry, module-import and QML interaction tests, then native Cocoa geometry/stacking checks from a relocated app bundle without DYLD search-path overrides. It requires a logged-in GUI session. Screenshots of this app alone are written to build/screenshots/{collapsed,hover,mixer}.png and wait for visible content, not just final frame size.
+The first command runs Audio property fixtures, Swift/Qt callback and teardown tests, geometry, module-import and QML interaction tests, then native Cocoa geometry/stacking checks from a relocated app bundle without DYLD search-path overrides. Audio is explicitly fake in all automated checks, including self-test mode. It requires a logged-in GUI session. Screenshots of this app alone are written to build/screenshots/{collapsed,hover,mixer}.png and wait for visible content, not just final frame size.
 
 The second command uses a disposable native fixture and real WindowServer input. It restores pointer/focus afterward and never requests permissions. It exits 77 without existing event-posting permission, or 2 if another PillSpike instance is running. It verifies corner click-through while the hovered pill is above the fixture, actual Qt fader hover/click delivery, consumed outside dismissal, resumed desktop clicks and actual Escape.
 
 The native self-test does not inject WindowServer input. Negative-level idle windows are absent from CGWindowList, so idle geometry is checked in-process while real-input tests observe the raised window. The offscreen QML runner may print Qt's generic Sans Serif font-alias timing warning; the native app uses an explicit installed font.
 
-Use --trace-preview to log local mixer focus/value changes to stderr for input diagnostics. Nothing is logged by this option unless enabled; no system-state data is collected.
+Use --test-audio for a labelled in-memory fixture instead of real hardware.
+The real-input harness supplies this flag and waits for confirmed fixture
+updates. --trace-preview logs mixer focus and local feedback; in fixture mode
+it also logs confirmed test values. Normal startup does not log system state.
+
+A separate read-only probe is safe to run without changing audio:
+
+    ./scripts/audio-live-test.sh --read-only
+
+Real-device write verification is opt-in and temporarily changes volume/mute:
+
+    PILL_AUDIO_HARDWARE_TEST=1 ./scripts/audio-live-test.sh --write-and-restore
+
+It captures individual channel values and restores them and mute on failure
+or success. Do not disconnect/switch devices during the test. A failed restore
+is reported explicitly and exits nonzero.
 
 ## Window/input limits
 

@@ -38,7 +38,7 @@ fixture.orderFrontRegardless()
 
 let child = Process()
 child.executableURL = URL(fileURLWithPath: CommandLine.arguments[1])
-child.arguments = ["--top-offset", "2", "--trace-preview"]
+child.arguments = ["--top-offset", "2", "--trace-preview", "--test-audio"]
 let traceURL = FileManager.default.temporaryDirectory.appendingPathComponent("pill-input-\(UUID().uuidString).log")
 FileManager.default.createFile(atPath: traceURL.path, contents: nil, attributes: [.posixPermissions: 0o600])
 let traceHandle = try FileHandle(forWritingTo: traceURL)
@@ -143,8 +143,8 @@ move(outside)
             check(true, "real Qt HoverHandler focuses volume fader")
             click(volumePoint); mixerProbe = 2; started = Date(); return
         }
-        guard trace().contains("preview-volume ") else { return }
-        check(true, "real native click adjusts local preview fader")
+        guard trace().contains("test-audio-confirmed ") else { return }
+        check(true, "real native click adjusts test Audio fixture")
         check(hasCatcher(), "real click pins mixer and enables catcher")
         move(outside); next()
     case 7:

@@ -2,8 +2,10 @@ import QtQuick
 import QtQuick.Controls.Basic
 import "Singletons"
 
-// Adapted Ricelin Mixer header and filament-fader layout. No hardware/service
-// imports remain. All enabled faders modify only these local preview values.
+// Adapted Ricelin Mixer header and filament-fader layout. Brightness and mic
+// stay local previews; volume and mute drive the injected Audio service. With
+// no service injected every hardware-backed control stays disabled rather than
+// showing a plausible-looking value.
 PillSurface {
     id: root
     objectName: "mixerSurface"
@@ -12,29 +14,104 @@ PillSurface {
     mRight: 14
     mBottom: 12
     property bool tracePreview: false
+    property var audioService: null
     property real previewBrightness: 0.7
-    property real previewVolume: 0.45
     property real previewMic: 0.6
     property int focusIndex: -1
+    // Local drag feedback only. The observed device value stays the source of
+    // truth, and a queued command never counts as a confirmed write.
+    property real requestedVolume: NaN
+    property string feedbackDevice: ""
+    property string gestureDevice: ""
+    property bool volumeGestureCanceled: false
+
+    readonly property bool volumeReady: audioService !== null && audioService.available && audioService.volumeKnown
+    readonly property bool volumeEnabled: volumeReady && audioService.canSetVolume
+    readonly property bool muteEnabled: audioService !== null && audioService.available
+        && audioService.muteKnown && audioService.canMute
+    readonly property real observedVolume: volumeReady ? audioService.volume : 0
+    readonly property string volumeLabel: !volumeReady ? "Unavailable"
+        : (audioService.canSetVolume ? (audioService.testBackend ? "Volume TEST" : "Volume LIVE") : "Read only")
+
     // Keyboard navigation deliberately skips the disabled fourth visual column.
     readonly property var faders: [brFader, volFader, micFader]
     signal quitRequested()
 
-    onActiveChanged: focusIndex = active ? 0 : -1
+    onActiveChanged: {
+        focusIndex = active ? 0 : -1
+        if (!active) clearFeedback()
+    }
     onFocusIndexChanged: if (tracePreview) console.info("preview-focus", focusIndex)
     onPreviewBrightnessChanged: if (tracePreview) console.info("preview-brightness", previewBrightness)
-    onPreviewVolumeChanged: if (tracePreview) console.info("preview-volume", previewVolume)
     onPreviewMicChanged: if (tracePreview) console.info("preview-mic", previewMic)
+    // Keep the existing input-harness trace key while the observed volume path
+    // is exercised; it fires on local feedback, not on a confirmed write.
+    onRequestedVolumeChanged: if (tracePreview) console.info("preview-volume", requestedVolume)
+
+    function clearFeedback() {
+        requestedVolume = NaN
+        feedbackDevice = ""
+    }
     function stepFocused(deltaPct) {
-        if (focusIndex >= 0) faders[focusIndex].step(deltaPct)
+        if (focusIndex < 0) return
+        const fader = faders[focusIndex]
+        if (fader.enabled) fader.step(deltaPct)
     }
     function moveFocus(dir) {
         focusIndex = focusIndex < 0 ? 0 : (focusIndex + dir + faders.length) % faders.length
+        for (let n = 0; n < faders.length && !faders[focusIndex].enabled; n++)
+            focusIndex = (focusIndex + dir + faders.length) % faders.length
+    }
+    function onVolumeMoved(v) {
+        if (!volumeEnabled) return
+        if (volFader.pressed && (volumeGestureCanceled || gestureDevice !== audioService.outputDeviceId)) return
+        requestedVolume = v
+        feedbackDevice = audioService.outputDeviceId
+        audioService.setVolume(v)
+    }
+    function onVolumeCommitted() {
+        reconcileVolume()
+        reconcileTimer.restart()
+    }
+    // Drops stale feedback when the device changes or the write is confirmed.
+    function reconcileVolume() {
+        if (volFader.pressed && (audioService === null || !volumeEnabled
+                || audioService.outputDeviceId !== gestureDevice))
+            volumeGestureCanceled = true
+        if (isNaN(requestedVolume)) return
+        const service = audioService
+        if (service === null || !service.available || !service.canSetVolume
+                || service.outputDeviceId !== feedbackDevice) {
+            clearFeedback()
+            return
+        }
+        if (!volFader.pressed && service.volumeKnown
+                && Math.abs(requestedVolume - service.volume) <= 0.005)
+            clearFeedback()
+    }
+
+    Timer {
+        id: reconcileTimer
+        interval: 500
+        onTriggered: if (!volFader.pressed) root.clearFeedback()
+    }
+    Connections {
+        target: root.audioService
+        enabled: root.audioService !== null
+        function onStateChanged() {
+            if (root.tracePreview && root.audioService.testBackend && !isNaN(root.requestedVolume)
+                    && root.audioService.volumeKnown
+                    && Math.abs(root.requestedVolume - root.audioService.volume) <= 0.005)
+                console.info("test-audio-confirmed", root.audioService.volume)
+            root.reconcileVolume()
+        }
+        function onErrorOccurred(operation, code, message) { root.clearFeedback() }
     }
 
     component IconChip: Button {
         id: chip
         property string glyph: ""
+        property string tooltip: text
         width: 26 * root.s
         height: 26 * root.s
         opacity: enabled ? 1 : 0.35
@@ -51,7 +128,7 @@ PillSurface {
             stroke: 1.7
         }
         ToolTip.visible: hovered
-        ToolTip.text: text
+        ToolTip.text: chip.tooltip
     }
 
     Item {
@@ -93,6 +170,17 @@ PillSurface {
             anchors.right: parent.right
             anchors.verticalCenter: parent.verticalCenter
             spacing: 6 * root.s
+            IconChip {
+                objectName: "muteChip"
+                glyph: root.audioService !== null && root.audioService.muted ? "speaker-off" : "speaker"
+                text: root.muteEnabled
+                    ? (root.audioService.muted ? "Unmute output" : "Mute output")
+                    : "Mute not available"
+                tooltip: root.audioService !== null && root.audioService.lastError.length > 0
+                    ? root.audioService.lastError : text
+                enabled: root.muteEnabled
+                onClicked: if (root.audioService) root.audioService.setMuted(!root.audioService.muted)
+            }
             IconChip { objectName: "devicePicker"; glyph: "speaker"; text: "Device selection not connected"; enabled: false }
             IconChip { objectName: "dndChip"; glyph: "dnd"; text: "Do not disturb not connected"; enabled: false }
             IconChip { objectName: "awakeChip"; glyph: "awake"; text: "Keep-awake not connected"; enabled: false }
@@ -145,12 +233,21 @@ PillSurface {
             width: parent.colW
             s: root.s
             icon: "speaker"
-            value: root.previewVolume
-            valueLabel: Math.round(value * 100) + "%"
-            subLabel: "Volume"
+            enabled: root.volumeEnabled
+            opacity: root.volumeEnabled ? 1 : 0.35
+            value: isNaN(root.requestedVolume) ? root.observedVolume : root.requestedVolume
+            valueLabel: root.volumeReady ? Math.round(value * 100) + "%" : "--"
+            subLabel: root.volumeLabel
             focused: root.active && root.focusIndex === 1
-            onMoved: (v) => root.previewVolume = v
-            HoverHandler { onHoveredChanged: if (hovered) root.focusIndex = 1 }
+            onGestureStarted: {
+                root.gestureDevice = root.audioService ? root.audioService.outputDeviceId : ""
+                root.volumeGestureCanceled = false
+            }
+            onMoved: (v) => root.onVolumeMoved(v)
+            onCommitted: root.onVolumeCommitted()
+            HoverHandler { id: volHover; onHoveredChanged: if (hovered) root.focusIndex = 1 }
+            ToolTip.visible: volHover.hovered && root.audioService !== null && root.audioService.lastError.length > 0
+            ToolTip.text: root.audioService !== null ? root.audioService.lastError : ""
         }
         VFader {
             id: micFader

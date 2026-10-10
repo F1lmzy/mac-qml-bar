@@ -10,6 +10,7 @@ Item {
     focus: true
     property real s: Flags.uiScale
     property bool tracePreview: false
+    property var audioService: null
     property bool hovered: false
     property bool hoverHeld: false
     property string surface: ""
@@ -213,6 +214,7 @@ Item {
         id: mixer
         s: pill.s
         tracePreview: pill.tracePreview
+        audioService: pill.audioService
         open: pill.expanded
         morphCloseness: pill.morphCloseness
         onRequestClose: pill.dismiss()

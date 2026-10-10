@@ -18,10 +18,14 @@ Item {
     property bool subPersistent: true
     property bool focused: false
 
+    signal gestureStarted()
     signal moved(real v)
     signal committed(real v)
 
     readonly property bool lit: focused
+
+    /** Live drag state, so a host can keep local feedback until release. */
+    readonly property bool pressed: dragArea.pressed
 
     readonly property real trackH: 86 * s
 
@@ -46,6 +50,7 @@ Item {
      * emitting `moved` and `committed` so live hardware updates on each step.
      */
     function step(deltaPct) {
+        if (!root.enabled) return;
         const v = Math.max(0, Math.min(1, root.value + deltaPct / 100));
         root.moved(v);
         root.committed(v);
@@ -104,9 +109,10 @@ Item {
                 const v = 1 - Math.max(0, Math.min(1, (my - 10 * root.s) / root.trackH));
                 root.moved(v);
             }
-            onPressed: (e) => setFromY(e.y)
+            onPressed: (e) => { root.gestureStarted(); setFromY(e.y); }
             onPositionChanged: (e) => { if (pressed) setFromY(e.y); }
             onReleased: root.committed(root.value)
+            onCanceled: root.committed(root.value)
         }
     }
 

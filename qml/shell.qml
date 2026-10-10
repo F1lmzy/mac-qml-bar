@@ -11,5 +11,6 @@ PanelWindow {
     implicitHeight: content.height
     property alias pill: content
     readonly property bool nativeBridgeReady: Bridge.ready
-    Pill { id: content }
+    readonly property bool nativeAudioReady: Audio.testBackend && Audio.available && Audio.volumeKnown && Audio.muteKnown
+    Pill { id: content; audioService: Audio }
 }
