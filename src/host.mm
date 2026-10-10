@@ -56,6 +56,7 @@ Host::Host(QQuickView &view, int topOffset, bool selfTest)
     window.opaque = NO;
     window.backgroundColor = NSColor.clearColor;
     window.hasShadow = NO;
+    window.hidesOnDeactivate = NO;
     window.level = -20;
     window.collectionBehavior = NSWindowCollectionBehaviorCanJoinAllSpaces
         | NSWindowCollectionBehaviorStationary | NSWindowCollectionBehaviorIgnoresCycle
@@ -117,8 +118,10 @@ void Host::syncGeometry() {
     // the unusable centre. Keep the collapsed pill's centre stable during morphs.
     if (window.screen.safeAreaInsets.top > 0) {
         const NSRect left = window.screen.auxiliaryTopLeftArea;
-        const qreal centre = NSMaxX(left) - 12 - 125;
-        frame.moveLeft(qRound(centre - frame.width() / 2.0));
+        if (!NSIsEmptyRect(left)) {
+            const qreal centre = NSMaxX(left) - 12 - 125;
+            frame.moveLeft(qRound(centre - frame.width() / 2.0));
+        }
     }
     view.setGeometry(frame);
     // Qt Quick can pause animation on an occluded Cocoa window. Raise as soon as
@@ -143,7 +146,13 @@ void Host::updatePointer() {
         if (!inside) suppressHoverUntilExit = false;
         inside = false;
     }
-    view.rootObject()->setProperty("hovered", inside);
+    auto *root = view.rootObject();
+    root->setProperty("hovered", inside);
+    // Qt's Cocoa activation observer can reset a tool window's floating level
+    // when another app becomes active. Restore shell stacking without activation.
+    const NSInteger desiredLevel = (expanded || root->property("hoverHeld").toBool()
+        || root->width() > 250 || root->height() > 34) ? NSFloatingWindowLevel : -20;
+    if (window.level != desiredLevel) syncGeometry();
 }
 
 void Host::updateMode() {
@@ -229,7 +238,7 @@ void Host::runSelfTest(const QString &directory) {
             check(window.level == NSFloatingWindowLevel, "expanded panel above ordinary windows");
             check(panel.visible, "expanded catcher visible");
             const auto screen = view.screen()->geometry();
-            const qreal centre = window.screen.safeAreaInsets.top > 0
+            const qreal centre = window.screen.safeAreaInsets.top > 0 && !NSIsEmptyRect(window.screen.auxiliaryTopLeftArea)
                 ? NSMaxX(window.screen.auxiliaryTopLeftArea) - 12 - 125
                 : screen.x() + screen.width() / 2.0;
             check(view.x() == qRound(centre - view.width() / 2.0), "pill centre remains stable");
