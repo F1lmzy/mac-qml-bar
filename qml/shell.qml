@@ -1,5 +1,6 @@
 import QtQuick
 import Quickshell
+import Pill.MacOS 1.0
 
 PanelWindow {
     id: panel
@@ -9,5 +10,6 @@ PanelWindow {
     implicitWidth: content.width
     implicitHeight: content.height
     property alias pill: content
+    readonly property bool nativeBridgeReady: Bridge.ready
     Pill { id: content }
 }

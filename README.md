@@ -26,6 +26,22 @@ See third_party/ricelin/SOURCE.md and LICENSE for upstream commit, source blocks
 
 The flame-bead effect, tray, notifications, launcher, settings, recording, wallpaper and other surfaces are omitted.
 
+## Native service checkpoint
+
+PLAN.md tasks 1 and 2 are complete. The omacosy donor revision, local changes,
+service extraction map and Paul Spende's MIT notice are recorded in
+third_party/omacosy. No hardware service code has been copied or connected.
+
+The app now loads an in-process Swift library through an Objective-C++ Qt
+adapter. Pill.MacOS 1.0 exports only Bridge.ready, a callback-health property,
+not simulated system state. All visible controls retain their preview/disabled
+behavior. See docs/native-services.md for ownership rules and the proposed
+Audio contract for the next checkpoint.
+
+The build generates the Swift library/header under build/native and packages
+the library inside PillSpike.app/Contents/Frameworks. It supports one native
+architecture matching Homebrew Qt.
+
 ## Local Quickshell subset
 
 qml/modules/Quickshell exports only:
@@ -47,7 +63,7 @@ Anchor declarations are validated at startup. The host supports one bounded top 
 ./scripts/native-input-test.sh
 ```
 
-The first command runs geometry, module-import and QML interaction tests, then native Cocoa geometry/stacking checks. It requires a logged-in GUI session. Screenshots of this app alone are written to build/screenshots/{collapsed,hover,mixer}.png and wait for visible content, not just final frame size.
+The first command runs Swift/Qt callback and teardown tests, geometry, module-import and QML interaction tests, then native Cocoa geometry/stacking checks from a relocated app bundle without DYLD search-path overrides. It requires a logged-in GUI session. Screenshots of this app alone are written to build/screenshots/{collapsed,hover,mixer}.png and wait for visible content, not just final frame size.
 
 The second command uses a disposable native fixture and real WindowServer input. It restores pointer/focus afterward and never requests permissions. It exits 77 without existing event-posting permission, or 2 if another PillSpike instance is running. It verifies corner click-through while the hovered pill is above the fixture, actual Qt fader hover/click delivery, consumed outside dismissal, resumed desktop clicks and actual Escape.
 

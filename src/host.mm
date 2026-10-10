@@ -224,6 +224,8 @@ void Host::runSelfTest(const QString &directory) {
         };
         switch (*phase) {
         case 0:
+            if (!view.property("nativeBridgeReady").toBool()) return;
+            check(view.property("nativeBridgeReady").toBool(), "packaged Swift callback reaches QML");
             check(window.level == -20, "collapsed native level");
             check(window.collectionBehavior & NSWindowCollectionBehaviorCanJoinAllSpaces, "joins Spaces");
             check(atSize(collapsed), "collapsed frame fits Ricelin pill");

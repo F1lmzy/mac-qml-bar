@@ -5,6 +5,7 @@
 #include <QQmlApplicationEngine>
 #include <QQmlProperty>
 #include "host.h"
+#include "services/nativebridge.h"
 
 int main(int argc, char **argv) {
     QGuiApplication app(argc, argv);
@@ -24,6 +25,7 @@ int main(int argc, char **argv) {
         qCritical("--top-offset must be an integer between 0 and 500");
         return 2;
     }
+    registerNativeServices();
     QQmlApplicationEngine engine;
     engine.addImportPath("qrc:/qml/modules");
     engine.load(QUrl("qrc:/qml/shell.qml"));

@@ -2,7 +2,8 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 ./scripts/build.sh
-mkdir -p build/tests
+mkdir -p build/tests build/nativebridge-tests
+(cd build/nativebridge-tests && qmake ../../tests/nativebridge.pro && make -j4 && ./nativebridge-test)
 (cd build/tests && qmake ../../tests/geometry.pro && make -j4 && ./geometry-test)
 QT_QPA_PLATFORM=offscreen QT_QUICK_CONTROLS_STYLE=Basic qmltestrunner -import qml/modules -input tests -o -,txt
-build/app/PillSpike.app/Contents/MacOS/PillSpike --top-offset 2 --self-test build/screenshots
+./scripts/packaging-test.sh
