@@ -25,7 +25,7 @@
 - (BOOL)canBecomeMainWindow { return NO; }
 @end
 
-static NSWindow *nativeWindow(QQuickView &view) {
+static NSWindow *nativeWindow(QQuickWindow &view) {
     return [(__bridge NSView *)reinterpret_cast<void *>(view.winId()) window];
 }
 
@@ -48,8 +48,8 @@ static void allowMenuBarStrip(NSWindow *window) {
     object_setClass(window, subclass);
 }
 
-Host::Host(QQuickView &view, int topOffset, bool selfTest)
-    : view(view), topOffset(topOffset), testing(selfTest) {
+Host::Host(QQuickWindow &view, QQuickItem &pill, int topOffset, bool selfTest)
+    : view(view), pill(pill), topOffset(topOffset), testing(selfTest) {
     [NSApp setActivationPolicy:NSApplicationActivationPolicyAccessory];
     NSWindow *window = nativeWindow(view);
     allowMenuBarStrip(window);
@@ -57,6 +57,7 @@ Host::Host(QQuickView &view, int topOffset, bool selfTest)
     window.backgroundColor = NSColor.clearColor;
     window.hasShadow = NO;
     window.hidesOnDeactivate = NO;
+    window.acceptsMouseMovedEvents = YES;
     window.level = -20;
     window.collectionBehavior = NSWindowCollectionBehaviorCanJoinAllSpaces
         | NSWindowCollectionBehaviorStationary | NSWindowCollectionBehaviorIgnoresCycle
@@ -74,15 +75,16 @@ Host::Host(QQuickView &view, int topOffset, bool selfTest)
     panel.level = NSFloatingWindowLevel - 1;
     panel.collectionBehavior = window.collectionBehavior;
     DismissView *dismissView = [[DismissView alloc] initWithFrame:NSZeroRect];
-    dismissView.dismiss = ^{ QMetaObject::invokeMethod(this->view.rootObject(), "dismiss"); };
+    dismissView.dismiss = ^{ QMetaObject::invokeMethod(&this->pill, "dismiss"); };
     panel.contentView = dismissView;
     catcher = (__bridge_retained void *)panel;
 
-    auto *root = view.rootObject();
+    auto *root = &pill;
     connect(root, &QQuickItem::widthChanged, this, &Host::syncGeometry);
     connect(root, &QQuickItem::heightChanged, this, &Host::syncGeometry);
     connect(root, SIGNAL(expandedChanged()), this, SLOT(updateMode()));
     connect(root, SIGNAL(hoverHeldChanged()), this, SLOT(syncGeometry()));
+    connect(root, SIGNAL(transitioningChanged()), this, SLOT(syncGeometry()));
     connect(qGuiApp, &QGuiApplication::primaryScreenChanged, this, &Host::syncGeometry);
     // Update placement after resolution changes and display hotplug.
     for (auto *screen : QGuiApplication::screens())
@@ -109,8 +111,8 @@ Host::~Host() {
 void Host::syncGeometry() {
     QScreen *screen = QGuiApplication::primaryScreen();
     if (!screen) return;
-    view.setScreen(screen);
-    auto *root = view.rootObject();
+    if (view.screen() != screen) view.setScreen(screen);
+    auto *root = &pill;
     NSWindow *window = nativeWindow(view);
     QRect frame = pillFrame(screen->geometry(),
         QSize(qRound(root->width()), qRound(root->height())), topOffset);
@@ -119,14 +121,14 @@ void Host::syncGeometry() {
     if (window.screen.safeAreaInsets.top > 0) {
         const NSRect left = window.screen.auxiliaryTopLeftArea;
         if (!NSIsEmptyRect(left)) {
-            const qreal centre = NSMaxX(left) - 12 - 125;
+            const qreal centre = NSMaxX(left) - 12 - root->property("collapsedSize").toSizeF().width() / 2;
             frame.moveLeft(qRound(centre - frame.width() / 2.0));
         }
     }
     view.setGeometry(frame);
     // Qt Quick can pause animation on an occluded Cocoa window. Raise as soon as
     // hover begins and keep it raised through the closing animation.
-    const bool animating = root->width() > 250 || root->height() > 34;
+    const bool animating = root->property("transitioning").toBool();
     const NSInteger level = (expanded || root->property("hoverHeld").toBool() || animating)
         ? NSFloatingWindowLevel : -20;
     if (window.level != level) {
@@ -139,24 +141,24 @@ void Host::syncGeometry() {
 
 void Host::updatePointer() {
     const QPoint local = QCursor::pos() - view.position();
-    bool inside = pillContains(QSizeF(view.size()), local);
+    bool inside = pillContains(QSizeF(view.size()), local, pill.property("morphRadius").toReal());
     NSWindow *window = nativeWindow(view);
     if (window.ignoresMouseEvents == inside) window.ignoresMouseEvents = !inside;
     if (suppressHoverUntilExit) {
         if (!inside) suppressHoverUntilExit = false;
         inside = false;
     }
-    auto *root = view.rootObject();
+    auto *root = &pill;
     root->setProperty("hovered", inside);
     // Qt's Cocoa activation observer can reset a tool window's floating level
     // when another app becomes active. Restore shell stacking without activation.
     const NSInteger desiredLevel = (expanded || root->property("hoverHeld").toBool()
-        || root->width() > 250 || root->height() > 34) ? NSFloatingWindowLevel : -20;
+        || root->property("transitioning").toBool()) ? NSFloatingWindowLevel : -20;
     if (window.level != desiredLevel) syncGeometry();
 }
 
 void Host::updateMode() {
-    expanded = view.rootObject()->property("expanded").toBool();
+    expanded = pill.property("expanded").toBool();
     NSWindow *window = nativeWindow(view);
     NSPanel *panel = (__bridge NSPanel *)catcher;
     if (expanded) {
@@ -206,19 +208,25 @@ void Host::runSelfTest(const QString &directory) {
     connect(timer, &QTimer::timeout, this, [=] {
         if (elapsed->elapsed() > 5000) {
             qCritical() << "FAIL: native phase timed out" << *phase
-                        << view.size() << view.rootObject()->size();
+                        << view.size() << pill.size();
             timer->stop();
             QCoreApplication::exit(1);
             return;
         }
         auto *window = nativeWindow(view);
         auto *panel = (__bridge NSPanel *)catcher;
-        auto *root = view.rootObject();
+        auto *root = &pill;
+        const auto collapsed = root->property("collapsedSize").toSizeF();
+        const auto hovered = root->property("hoverSize").toSizeF();
+        const auto mixer = root->property("mixerSize").toSizeF();
+        auto atSize = [&](const QSizeF &size) {
+            return view.size() == size.toSize() && root->size() == size;
+        };
         switch (*phase) {
         case 0:
             check(window.level == -20, "collapsed native level");
             check(window.collectionBehavior & NSWindowCollectionBehaviorCanJoinAllSpaces, "joins Spaces");
-            check(view.size() == QSize(250, 34), "collapsed frame fits pill");
+            check(atSize(collapsed), "collapsed frame fits Ricelin pill");
             check(qAbs(NSMaxY(window.frame) - NSMaxY(window.screen.frame) + topOffset) < 1,
                   "native frame aligns with requested screen top, not the menu-bar floor");
             check(!panel.visible, "no idle click catcher");
@@ -226,20 +234,21 @@ void Host::runSelfTest(const QString &directory) {
             root->setProperty("hovered", true);
             break;
         case 1:
-            if (view.size() != QSize(360, 44) || root->size() != QSizeF(360, 44)) return;
+            if (!atSize(hovered) || root->findChild<QQuickItem *>("hoverContent")->opacity() < 0.99) return;
             check(window.level == NSFloatingWindowLevel, "hover window raised to animate while occluded");
-            check(root->size() == QSizeF(360, 44), "hover morph resizes native window");
+            check(atSize(hovered), "hover morph resizes native window");
+            check(root->findChild<QQuickItem *>("hoverContent")->opacity() > 0.98, "hover content visible in snapshot");
             capture("hover");
             QMetaObject::invokeMethod(root, "open");
             break;
         case 2: {
-            if (view.size() != QSize(440, 264) || root->size() != QSizeF(440, 264)) return;
-            check(root->size() == QSizeF(440, 264), "expanded native geometry");
+            if (!atSize(mixer) || root->findChild<QQuickItem *>("mixerSurface")->opacity() < 0.99) return;
+            check(atSize(mixer), "expanded native geometry");
             check(window.level == NSFloatingWindowLevel, "expanded panel above ordinary windows");
             check(panel.visible, "expanded catcher visible");
             const auto screen = view.screen()->geometry();
             const qreal centre = window.screen.safeAreaInsets.top > 0 && !NSIsEmptyRect(window.screen.auxiliaryTopLeftArea)
-                ? NSMaxX(window.screen.auxiliaryTopLeftArea) - 12 - 125
+                ? NSMaxX(window.screen.auxiliaryTopLeftArea) - 12 - root->property("collapsedSize").toSizeF().width() / 2
                 : screen.x() + screen.width() / 2.0;
             check(view.x() == qRound(centre - view.width() / 2.0), "pill centre remains stable");
             capture("mixer");
@@ -251,20 +260,21 @@ void Host::runSelfTest(const QString &directory) {
             break;
         }
         case 3:
-            if (view.size() != QSize(250, 34) || root->size() != QSizeF(250, 34)) return;
+            if (!atSize(collapsed) || root->property("transitioning").toBool()) return;
+            check(root->findChild<QQuickItem *>("restContent")->opacity() > 0.98, "rest content visible after closing");
             check(window.level == -20, "closing animation returns to idle level");
             check(!panel.visible, "catcher removed after dismissal");
             QMetaObject::invokeMethod(root, "open");
             break;
         case 4: {
-            if (view.size() != QSize(440, 264) || root->size() != QSizeF(440, 264)) return;
+            if (!atSize(mixer)) return;
             QKeyEvent escape(QEvent::KeyPress, Qt::Key_Escape, Qt::NoModifier);
             QCoreApplication::sendEvent(&view, &escape);
             check(!root->property("expanded").toBool(), "Escape reaches QML");
             break;
         }
         case 5:
-            if (view.size() != QSize(250, 34) || root->size() != QSizeF(250, 34)) return;
+            if (!atSize(collapsed) || root->property("transitioning").toBool()) return;
             timer->stop();
             QCoreApplication::exit(*failed ? 1 : 0);
             return;

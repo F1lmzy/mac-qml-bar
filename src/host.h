@@ -1,12 +1,13 @@
 #pragma once
 #include <QObject>
 #include <QTimer>
-#include <QQuickView>
+#include <QQuickWindow>
+#include <QQuickItem>
 
 class Host : public QObject {
     Q_OBJECT
 public:
-    Host(QQuickView &view, int topOffset, bool selfTest);
+    Host(QQuickWindow &view, QQuickItem &pill, int topOffset, bool selfTest);
     ~Host() override;
     void runSelfTest(const QString &directory);
 public slots:
@@ -14,7 +15,8 @@ public slots:
     void updateMode();
 private:
     void updatePointer();
-    QQuickView &view;
+    QQuickWindow &view;
+    QQuickItem &pill;
     QTimer pointerTimer;
     void *catcher = nullptr;
     void *previousApplication = nullptr;

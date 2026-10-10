@@ -1,1 +1,20 @@
-<RCC><qresource prefix="/"><file>qml/Pill.qml</file></qresource></RCC>
+<RCC><qresource prefix="/">
+    <file>qml/modules/Quickshell/PanelAnchors.qml</file>
+    <file>qml/modules/Quickshell/PanelWindow.qml</file>
+    <file>qml/modules/Quickshell/qmldir</file>
+    <file>qml/modules/Quickshell/Quickshell.qml</file>
+    <file>qml/modules/Quickshell/Singleton.qml</file>
+    <file>qml/modules/Quickshell/SystemClock.qml</file>
+    <file>qml/Pill.qml</file>
+    <file>qml/ricelin/GlyphIcon.qml</file>
+    <file>qml/ricelin/Mixer.qml</file>
+    <file>qml/ricelin/PillSurface.qml</file>
+    <file>qml/ricelin/Singletons/DemoState.qml</file>
+    <file>qml/ricelin/Singletons/Flags.qml</file>
+    <file>qml/ricelin/Singletons/Motion.qml</file>
+    <file>qml/ricelin/Singletons/qmldir</file>
+    <file>qml/ricelin/Singletons/Theme.qml</file>
+    <file>qml/ricelin/VFader.qml</file>
+    <file>qml/ricelin/Workspaces.qml</file>
+    <file>qml/shell.qml</file>
+</qresource></RCC>

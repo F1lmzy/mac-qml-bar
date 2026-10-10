@@ -1,62 +1,97 @@
 import QtQuick
 import QtTest
 import "../qml"
+import "../qml/ricelin/Singletons"
 
 TestCase {
-    name: "PillInteraction"
+    name: "RicelinInteraction"
     when: windowShown
     visible: true
-    width: 600
-    height: 400
+    width: 800
+    height: 500
     Pill { id: pill }
-
+    function settled(size) {
+        tryCompare(pill, "width", size.width)
+        tryCompare(pill, "height", size.height)
+    }
     function init() {
         pill.dismiss()
-        tryCompare(pill, "width", 250)
-        tryCompare(pill, "height", 34)
+        settled(pill.collapsedSize)
     }
-    function test_hoverMorphsWithoutOpening() {
+    function test_sourceGeometryAndMotion() {
+        compare(pill.width, 160)
+        compare(pill.height, 38)
+        compare(pill.mixerSize, Qt.size(372, 214))
+        compare(pill.morphRadius, 18)
+        compare(Motion.glide, 260)
+        compare(Motion.morph, 420)
+        compare(Motion.morphCurve, [0.16, 1, 0.3, 1, 1, 1])
+    }
+    function test_hoverAndLeave() {
         pill.hovered = true
-        tryCompare(pill, "width", 360)
-        tryCompare(pill, "height", 44)
+        settled(pill.hoverSize)
+        compare(pill.height, 58)
+        tryCompare(findChild(pill, "hoverContent"), "opacity", 1)
         compare(pill.expanded, false)
-    }
-    function test_pointerLeavesAndCollapses() {
-        pill.hovered = true
-        tryCompare(pill, "width", 360)
         pill.hovered = false
-        tryCompare(pill, "width", 250)
+        settled(pill.collapsedSize)
     }
-    function test_clickOpensAndStaysPinned() {
-        mouseClick(pill, 125, 17)
-        tryCompare(pill, "width", 440)
-        tryCompare(pill, "height", 264)
+    function test_clickPinsMixer() {
+        mouseClick(pill, 80, 19)
+        settled(pill.mixerSize)
         compare(pill.expanded, true)
         pill.hovered = false
-        wait(350)
+        wait(500)
         compare(pill.expanded, true)
     }
-    function test_dismissClearsHoverAndPin() {
+    function test_dismissAndEscape() {
         pill.open()
         pill.hovered = true
         pill.dismiss()
         compare(pill.expanded, false)
         compare(pill.hovered, false)
-        tryCompare(pill, "width", 250)
-    }
-    function test_escapeClosesPanel() {
+        settled(pill.collapsedSize)
         pill.open()
         pill.forceActiveFocus()
         keyClick(Qt.Key_Escape)
         compare(pill.expanded, false)
     }
-    function test_sliderIsDemoOnly() {
+    function test_previewFadersAndClamping() {
         pill.open()
-        tryCompare(pill, "height", 264)
-        const slider = findChild(pill, "volumeSlider")
-        verify(slider !== null)
-        slider.value = 0.25
-        compare(slider.value, 0.25)
+        settled(pill.mixerSize)
+        const volume = findChild(pill, "volumeFader")
+        verify(volume !== null)
+        const previous = volume.value
+        volume.step(10)
+        fuzzyCompare(volume.value, Math.min(1, previous + 0.1), 0.001)
+        volume.step(200)
+        compare(volume.value, 1)
+        volume.step(-200)
+        compare(volume.value, 0)
         compare(pill.expanded, true)
+    }
+    function test_unavailableActionsAreDisabled() {
+        pill.open()
+        settled(pill.mixerSize)
+        for (const name of ["vibranceFader", "devicePicker", "dndChip", "awakeChip", "nightChip"])
+            compare(findChild(pill, name).enabled, false, name)
+    }
+    function test_sourceThemeAndPlaceholders() {
+        compare(Theme.cream, Qt.color("#e6d6cb"))
+        compare(Theme.vermLit, Qt.color("#e0563b"))
+        compare(Theme.dyn, false)
+        compare(DemoState.workspaceIds, [1, 2, 3, 4, 5])
+        compare(DemoState.mediaTitle, "Media preview")
+    }
+    function test_keyboardAdjustsPreviewOnly() {
+        pill.open()
+        settled(pill.mixerSize)
+        pill.forceActiveFocus()
+        const volume = findChild(pill, "volumeFader")
+        const mixer = findChild(pill, "mixerSurface")
+        mixer.focusIndex = 1
+        const previous = volume.value
+        keyClick(Qt.Key_Up)
+        fuzzyCompare(volume.value, Math.min(1, previous + 0.01), 0.001)
     }
 }
