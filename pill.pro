@@ -1,0 +1,11 @@
+QT += quick qml quickcontrols2
+CONFIG += c++17
+TARGET = PillSpike
+SOURCES += src/main.cpp
+OBJECTIVE_SOURCES += src/host.mm
+HEADERS += src/host.h src/geometry.h
+RESOURCES += qml.qrc
+QMAKE_CXXFLAGS += -fobjc-arc
+QMAKE_MACOSX_DEPLOYMENT_TARGET = 26.0
+LIBS += -framework AppKit
+QMAKE_INFO_PLIST = Info.plist
