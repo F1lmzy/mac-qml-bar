@@ -12,7 +12,7 @@ int main(int argc, char **argv) {
     QCommandLineParser parser;
     parser.setApplicationDescription("Isolated macOS / Qt Quick morphing pill spike");
     parser.addHelpOption();
-    parser.addOption({"top-offset", "Pixels from screen top; notch clearance is automatic.", "pixels", "6"});
+    parser.addOption({"top-offset", "Pixels from the screen top; default matches omacosy.", "pixels", "0"});
     parser.addOption({"self-test", "Run native checks, save screenshots, and exit.", "directory"});
     parser.process(app);
     bool ok;

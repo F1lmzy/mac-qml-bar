@@ -1,4 +1,5 @@
 #import <AppKit/AppKit.h>
+#import <objc/runtime.h>
 #include <QCursor>
 #include <QDir>
 #include <QElapsedTimer>
@@ -28,10 +29,30 @@ static NSWindow *nativeWindow(QQuickView &view) {
     return [(__bridge NSView *)reinterpret_cast<void *>(view.winId()) window];
 }
 
+// Equivalent to omacosy's BarWindow.constrainFrameRect override. Subclass only
+// this instance, never patch NSWindow/Qt globally or depend on private Qt headers.
+static NSRect unconstrainedFrame(id, SEL, NSRect frame, NSScreen *) { return frame; }
+static void allowMenuBarStrip(NSWindow *window) {
+    const Class base = object_getClass(window);
+    const QByteArray name = QByteArray("PillUnconstrained_") + class_getName(base);
+    Class subclass = objc_getClass(name.constData());
+    if (!subclass) {
+        subclass = objc_allocateClassPair(base, name.constData(), 0);
+        const SEL selector = @selector(constrainFrameRect:toScreen:);
+        const Method method = class_getInstanceMethod(base, selector);
+        if (!subclass || !method || !class_addMethod(subclass, selector,
+            reinterpret_cast<IMP>(unconstrainedFrame), method_getTypeEncoding(method)))
+            qFatal("Cannot create an unconstrained macOS panel");
+        objc_registerClassPair(subclass);
+    }
+    object_setClass(window, subclass);
+}
+
 Host::Host(QQuickView &view, int topOffset, bool selfTest)
     : view(view), topOffset(topOffset), testing(selfTest) {
     [NSApp setActivationPolicy:NSApplicationActivationPolicyAccessory];
     NSWindow *window = nativeWindow(view);
+    allowMenuBarStrip(window);
     window.opaque = NO;
     window.backgroundColor = NSColor.clearColor;
     window.hasShadow = NO;
@@ -90,9 +111,15 @@ void Host::syncGeometry() {
     view.setScreen(screen);
     auto *root = view.rootObject();
     NSWindow *window = nativeWindow(view);
-    const int notch = window.screen ? qCeil(window.screen.safeAreaInsets.top) : 0;
-    const QRect frame = pillFrame(screen->geometry(),
-        QSize(qRound(root->width()), qRound(root->height())), qMax(topOffset, notch + 6));
+    QRect frame = pillFrame(screen->geometry(),
+        QSize(qRound(root->width()), qRound(root->height())), topOffset);
+    // Match omacosy's notch policy: use the top strip, but move content out of
+    // the unusable centre. Keep the collapsed pill's centre stable during morphs.
+    if (window.screen.safeAreaInsets.top > 0) {
+        const NSRect left = window.screen.auxiliaryTopLeftArea;
+        const qreal centre = NSMaxX(left) - 12 - 125;
+        frame.moveLeft(qRound(centre - frame.width() / 2.0));
+    }
     view.setGeometry(frame);
     // Qt Quick can pause animation on an occluded Cocoa window. Raise as soon as
     // hover begins and keep it raised through the closing animation.
@@ -183,6 +210,8 @@ void Host::runSelfTest(const QString &directory) {
             check(window.level == -20, "collapsed native level");
             check(window.collectionBehavior & NSWindowCollectionBehaviorCanJoinAllSpaces, "joins Spaces");
             check(view.size() == QSize(250, 34), "collapsed frame fits pill");
+            check(qAbs(NSMaxY(window.frame) - NSMaxY(window.screen.frame) + topOffset) < 1,
+                  "native frame aligns with requested screen top, not the menu-bar floor");
             check(!panel.visible, "no idle click catcher");
             capture("collapsed");
             root->setProperty("hovered", true);
@@ -200,7 +229,10 @@ void Host::runSelfTest(const QString &directory) {
             check(window.level == NSFloatingWindowLevel, "expanded panel above ordinary windows");
             check(panel.visible, "expanded catcher visible");
             const auto screen = view.screen()->geometry();
-            check(view.x() == pillFrame(screen, view.size(), 0).x(), "top-centre anchor remains stable");
+            const qreal centre = window.screen.safeAreaInsets.top > 0
+                ? NSMaxX(window.screen.auxiliaryTopLeftArea) - 12 - 125
+                : screen.x() + screen.width() / 2.0;
+            check(view.x() == qRound(centre - view.width() / 2.0), "pill centre remains stable");
             capture("mixer");
             auto *click = [NSEvent mouseEventWithType:NSEventTypeLeftMouseDown
                 location:NSZeroPoint modifierFlags:0 timestamp:0 windowNumber:0
