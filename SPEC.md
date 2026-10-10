@@ -1,4 +1,6 @@
-# Step 1: macOS pill spike
+# Step 1: macOS pill spike, historical contract
+
+Current step 2 scope is in SLICE.md. It adds a small Quickshell module subset and adapts Ricelin geometry/visuals. The local top-offset default is now 2 pixels.
 
 An isolated, disposable Qt Quick prototype, not a Quickshell port.
 
