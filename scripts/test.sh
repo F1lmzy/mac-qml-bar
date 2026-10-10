@@ -2,6 +2,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 ./scripts/build.sh
+./scripts/audio-test.sh
 mkdir -p build/tests build/nativebridge-tests
 (cd build/nativebridge-tests && qmake ../../tests/nativebridge.pro && make -j4 && ./nativebridge-test)
 (cd build/tests && qmake ../../tests/geometry.pro && make -j4 && ./geometry-test)

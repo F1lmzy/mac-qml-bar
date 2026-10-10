@@ -6,6 +6,7 @@
 #include <QQmlProperty>
 #include "host.h"
 #include "services/nativebridge.h"
+#include "services/audio.h"
 
 int main(int argc, char **argv) {
     QGuiApplication app(argc, argv);
@@ -18,6 +19,7 @@ int main(int argc, char **argv) {
     parser.addOption({"top-offset", "Pixels from the screen top; default matches omacosy.", "pixels", "0"});
     parser.addOption({"self-test", "Run native checks, save screenshots, and exit.", "directory"});
     parser.addOption({"trace-preview", "Log local mixer focus/value changes for input diagnostics."});
+    parser.addOption({"test-audio", "Use the labelled in-memory Audio test fixture; never access hardware."});
     parser.process(app);
     bool ok;
     int offset = parser.value("top-offset").toInt(&ok);
@@ -26,6 +28,7 @@ int main(int argc, char **argv) {
         return 2;
     }
     registerNativeServices();
+    registerAudioService(parser.isSet("test-audio") || parser.isSet("self-test"));
     QQmlApplicationEngine engine;
     engine.addImportPath("qrc:/qml/modules");
     engine.load(QUrl("qrc:/qml/shell.qml"));

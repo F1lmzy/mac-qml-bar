@@ -15,4 +15,4 @@ xcrun swiftc -swift-version 5 -O -emit-library -emit-module \
     -emit-objc-header -emit-objc-header-path "$output/PillNative-Swift.h" \
     -emit-module-path "$output/PillNative.swiftmodule" \
     -Xlinker -install_name -Xlinker @rpath/libPillNative.dylib \
-    src/native/NativeBackend.swift -o "$output/libPillNative.dylib"
+    src/native/*.swift -o "$output/libPillNative.dylib"

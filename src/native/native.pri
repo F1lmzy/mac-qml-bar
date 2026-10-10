@@ -2,7 +2,7 @@
 NATIVE_BUILD_DIR = $$clean_path($$OUT_PWD/../native)
 NATIVE_LIBRARY = $$NATIVE_BUILD_DIR/libPillNative.dylib
 NATIVE_HEADER = $$NATIVE_BUILD_DIR/PillNative-Swift.h
-NATIVE_SOURCE = $$PWD/NativeBackend.swift
+NATIVE_SOURCE = $$files($$PWD/*.swift)
 NATIVE_SCRIPT = $$PWD/../../scripts/build-native.sh
 
 INCLUDEPATH += $$NATIVE_BUILD_DIR
@@ -26,5 +26,7 @@ native_header.commands = test -f $$shell_quote($$NATIVE_HEADER) || $$native_back
 # PRE_TARGETDEPS covers linking, not parallel compilation.
 native_adapter.target = nativebridge.o
 native_adapter.depends = $$native_header.target
-QMAKE_EXTRA_TARGETS += native_backend native_header native_adapter
+native_audio_adapter.target = audio.o
+native_audio_adapter.depends = $$native_header.target
+QMAKE_EXTRA_TARGETS += native_backend native_header native_adapter native_audio_adapter
 PRE_TARGETDEPS += $$native_backend.target

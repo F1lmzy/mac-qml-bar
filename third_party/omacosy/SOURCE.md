@@ -21,9 +21,19 @@ No donor files, agents, AeroSpace hooks or shared /tmp files were changed.
 
 ## Copied sections
 
-Only LICENSE has been copied so far. The minimal Swift/Qt boundary proof is new
-code; it does not copy the bar Model or a hardware service. Add source ranges
-and destination symbols here as each service is actually extracted.
+LICENSE is retained in this repository and packaged with the app, alongside
+Ricelin's license. The minimal Swift/Qt boundary proof is new code.
+
+The Audio driver in src/native/CoreAudioHardware.swift adapts helper/bar.swift
+672–733, defaultOutputDevice, volumeAddress and scalar/mute reads/writes, and
+3619–3648, exact listener attachment/removal and default-output observation.
+The addresses and CoreAudio call patterns are retained. OSStatus checks,
+channel enumeration, independent read/write capabilities, normalized values,
+worker-queue delivery and removable observation closures replace the donor's
+unchecked, rounded, presentation-coupled implementations. AudioController.swift
+and AudioService.swift are new lifecycle/state adapters. Device enumeration,
+device selection, input gain, Model, set/repaint and AppKit presentation are
+not copied. The audited source hash remains unchanged.
 
 ## Extraction map
 

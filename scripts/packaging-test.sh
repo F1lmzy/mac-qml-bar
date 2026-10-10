@@ -6,6 +6,8 @@ bundle="build/app/PillSpike.app"
 library="$bundle/Contents/Frameworks/libPillNative.dylib"
 test -f "$library"
 cmp build/native/libPillNative.dylib "$library"
+cmp third_party/omacosy/LICENSE "$bundle/Contents/Resources/licenses/omacosy/LICENSE"
+cmp third_party/ricelin/LICENSE "$bundle/Contents/Resources/licenses/ricelin/LICENSE"
 otool -L "$bundle/Contents/MacOS/PillSpike" | grep -q '@rpath/libPillNative.dylib'
 # Launch a relocated bundle, without build-directory library search overrides.
 mkdir -p build/packaging
@@ -14,4 +16,4 @@ ditto "$bundle" build/packaging/PillSpike.app
 env -u DYLD_LIBRARY_PATH -u DYLD_FRAMEWORK_PATH \
     -u DYLD_FALLBACK_LIBRARY_PATH -u DYLD_FALLBACK_FRAMEWORK_PATH \
     "$root/build/packaging/PillSpike.app/Contents/MacOS/PillSpike" \
-    --top-offset 2 --self-test "$root/build/screenshots"
+    --top-offset 2 --test-audio --self-test "$root/build/screenshots"
