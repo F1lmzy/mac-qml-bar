@@ -1,4 +1,5 @@
 import Foundation
+import Darwin
 
 // Owns one child and its pipe handlers. All methods except process callbacks are
 // called on main. Process output is only parsed on main via the callback made
@@ -25,9 +26,24 @@ final class CommandStream {
             let child = Process(), output = Pipe()
             child.executableURL = URL(fileURLWithPath: path); child.arguments = arguments
             child.standardOutput = output; child.standardError = FileHandle.nullDevice
-            output.fileHandleForReading.readabilityHandler = { handle in
-                guard let data = try? handle.read(upToCount: 16384) else { return }
-                guard !data.isEmpty else { handle.readabilityHandler = nil; return }
+            output.fileHandleForReading.readabilityHandler = { [weak self] handle in
+                guard let self = self else { return }
+                // Foundation read(upToCount:) can fill its requested buffer on a
+                // persistent pipe. One bounded read delivers each short event now.
+                // Serialize descriptor access with stop so a closed/reused fd
+                // cannot be consumed by an old handler.
+                self.lock.lock()
+                guard !self.stopped, self.token == current else { self.lock.unlock(); return }
+                var bytes = [UInt8](repeating: 0, count: 16384)
+                let count = bytes.withUnsafeMutableBytes { buffer in
+                    Darwin.read(handle.fileDescriptor, buffer.baseAddress!, buffer.count)
+                }
+                self.lock.unlock()
+                guard count > 0 else {
+                    if count == 0 { handle.readabilityHandler = nil }
+                    return
+                }
+                let data = Data(bytes.prefix(count))
                 DispatchQueue.main.async { [weak self] in
                     guard let self = self, !self.isStopped(current) else { return }
                     onData(data)

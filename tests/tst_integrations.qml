@@ -1,6 +1,7 @@
 import QtQuick
 import QtTest
 import "../qml"
+import "../qml/ricelin/Singletons"
 
 TestCase {
     name: "PillSystemIntegrations"
@@ -92,6 +93,22 @@ TestCase {
         compare(system.calls.length, 1)
         compare(system.calls[0].action, "switchWorkspace")
         compare(system.calls[0].argument, "web")
+    }
+    function test_externalWorkspaceChangeUpdatesHighlightImmediately() {
+        pill.hovered = true
+        tryCompare(pill, "width", pill.hoverSize.width)
+        const workspaces = findChild(pill, "workspaces")
+        const dot = findChild(workspaces, "workspaceDot_web")
+        verify(dot !== null)
+        const previous = system.windowManager
+        system.windowManager = Object.assign({}, previous, {focusedWorkspace: "web"})
+        system.stateChanged()
+        compare(workspaces.focusedWorkspace, "web")
+        verify(dot.focused)
+        compare(dot.color, Theme.vermLit)
+        compare(system.calls.length, 0) // Observation must not write back.
+        system.windowManager = previous
+        system.stateChanged()
     }
     function test_systemPanelRequiresConfirmationForPowerAndMenuActions() {
         pill.openSystem(); tryCompare(pill, "height", pill.systemSize.height)

@@ -37,8 +37,10 @@ QML object arguments explicitly and posts context-bound property updates.
 | outputDevices | Current output rows and settable default-output capability. select(id), revalidated before write and reread/listened afterward. Input gain/selection has no donor implementation. |
 | windowManager | Backend, global focused workspace/window, real workspace/monitor/window rows and explicit switchWorkspace(id)/focusWindow(id). AeroSpace and donor-shaped OmniWM snapshots. OmniWM window focus is unsupported. |
 
-AeroSpace uses bounded NDJSON subscription, 120 ms event coalescing, 1–30 second
-reconnect backoff and 15-second reconciliation for hidden-workspace moves.
+AeroSpace uses a bounded single-read NDJSON subscription. Confirmed focus events
+publish the workspace highlight immediately and start background reconciliation;
+older in-flight snapshots cannot revert it. Non-focus events coalesce over 120 ms.
+Reconnect backoff is 1–30 seconds, with 15-second reconciliation for hidden moves.
 OmniWM's watch stream was not verified and is not claimed supported; its
 snapshots reconcile every 15 seconds. Model changes cancel queued action leases;
 AeroSpace actions requery target IDs before executing. Named/empty workspaces
@@ -89,7 +91,7 @@ side effects, not additional macOS APIs. The local clock/date remain native Qt.
 ## Verification and limits
 
 scripts/test.sh passes property/policy/parsing fixtures, stale-WM/backend-change
-fixtures, 8 Audio bridge, 10 System bridge, 9 boundary, 5 geometry and 30 QML
+fixtures, 8 Audio bridge, 10 System bridge, 9 boundary, 5 geometry and 31 QML
 cases, plus a relocated signed bundle's fake-service/native geometry checks.
 Pending deletion, repeated stop/start and deletion during delivery are covered.
 The system panel is captured in build/screenshots/system.png.

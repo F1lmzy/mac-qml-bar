@@ -5,6 +5,7 @@ func runIntegrationFixtures() throws {
         try runPrivacyTests()
         try runWindowManagerTests()
         try runLifecycleTests()
+        runWorkspaceEventTests()
         let duplicateMonitor = Data(#"[{"monitor-id":1,"monitor-name":"A"},{"monitor-id":1,"monitor-name":"B"}]"#.utf8)
         do {
             _ = try WindowManagerModels.snapshot(workspaces: Data(#"[{"workspace":"empty","monitor-id":1,"workspace-is-visible":true}]"#.utf8),

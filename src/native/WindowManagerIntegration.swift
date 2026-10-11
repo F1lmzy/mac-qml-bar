@@ -6,6 +6,7 @@ final class WindowManagerIntegration: PillIntegration {
     private var revision: UInt64 = 0
     private var refreshPending = false
     private var eventRefreshPending = false
+    private var focusEventRevision: UInt64 = 0
     private var backend = ""
     private var eventBuffer = Data()
     private var stream: CommandStream?
@@ -67,7 +68,7 @@ final class WindowManagerIntegration: PillIntegration {
         if selectedBackend() != backend { selectBackend(); return }
         if refreshPending { refreshAgain = true; return }
         refreshPending = true; revision &+= 1
-        let token = revision, selected = backend, path = selected == "OmniWM" ? omniPath : aerospacePath, runner = self.runner
+        let token = revision, focusToken = focusEventRevision, selected = backend, path = selected == "OmniWM" ? omniPath : aerospacePath, runner = self.runner
         guard FileManager.default.isExecutableFile(atPath: path) else {
             refreshPending = false; invalidateSnapshot(selected, "unavailable", "Window-manager CLI is unavailable."); return
         }
@@ -95,6 +96,11 @@ final class WindowManagerIntegration: PillIntegration {
         }, receive: { [weak self] state in
             guard let self = self, self.revision == token, self.backend == selected else { return }
             self.refreshPending = false
+            // A focus notification is newer than a snapshot already in flight.
+            // Never let that older response flash the previous workspace again.
+            if self.focusEventRevision != focusToken {
+                self.refreshAgain = false; self.refresh(); return
+            }
             let focused = state["focusedWindow"] as? String ?? ""
             if !focused.isEmpty { self.lastManagedFocus = focused }
             if let parsed = try? Self.decodeSnapshot(state) {
@@ -114,6 +120,9 @@ final class WindowManagerIntegration: PillIntegration {
         }, failure: { [weak self] error in
             guard let self = self, self.revision == token, self.backend == selected else { return }
             self.refreshPending = false
+            if self.focusEventRevision != focusToken {
+                self.refreshAgain = false; self.refresh(); return
+            }
             self.snapshot = nil
             self.invalidateSnapshot(selected, error.code, error.message)
             if self.refreshAgain { self.refreshAgain = false; self.refresh() }
@@ -164,11 +173,31 @@ final class WindowManagerIntegration: PillIntegration {
         }
         child.start(onData: onData, onTermination: onTermination)
     }
-    private func receiveEvents(_ chunk: Data) {
+    func receiveEvents(_ chunk: Data) {
         precondition(Thread.isMainThread)
+        guard running, backend == "AeroSpace" else { return }
         do {
             let events = try WindowManagerModels.parseEventLines(&eventBuffer, chunk: chunk)
-            if !events.isEmpty { scheduleEventRefresh() }
+            var urgent = false
+            for event in events where ["focused-workspace-changed", "focused-monitor-changed", "focus-changed"].contains(event["_event"] as? String ?? "") {
+                urgent = true; focusEventRevision &+= 1
+                // This is observed server state, not an optimistic click result.
+                // Publish the highlight now; reconcile occupancy/monitors later.
+                guard let id = event["workspace"] as? String, let current = snapshot,
+                      WindowManagerModels.validatedWorkspace(id, in: current) else { continue }
+                var window = id == current.focusedWorkspace ? current.focusedWindow : ""
+                if let candidate = WindowManagerModels.numericID(event["windowId"]),
+                   current.windows.contains(where: { $0.id == candidate && $0.workspace == id }) { window = candidate }
+                if id != current.focusedWorkspace { lastManagedFocus = "" }
+                let next = WMSnapshot(backend: current.backend, focusedWorkspace: id, focusedWindow: window,
+                    workspaces: current.workspaces, monitors: current.monitors, windows: current.windows)
+                if next != current {
+                    modelLease.cancel(); modelLease = IntegrationCancellation()
+                    snapshot = next; publish(next.state)
+                }
+            }
+            if urgent { refresh() }
+            else if !events.isEmpty { scheduleEventRefresh() }
         } catch {
             stream?.stop(); stream = nil; eventBuffer.removeAll(); scheduleReconnect()
         }
