@@ -8,6 +8,11 @@ test -f "$library"
 cmp build/native/libPillNative.dylib "$library"
 cmp third_party/omacosy/LICENSE "$bundle/Contents/Resources/licenses/omacosy/LICENSE"
 cmp third_party/ricelin/LICENSE "$bundle/Contents/Resources/licenses/ricelin/LICENSE"
+cmp Info.plist "$bundle/Contents/Info.plist"
+/usr/bin/codesign --verify --strict "$bundle"
+for key in NSLocationWhenInUseUsageDescription NSBluetoothAlwaysUsageDescription NSAppleEventsUsageDescription; do
+    /usr/libexec/PlistBuddy -c "Print :$key" "$bundle/Contents/Info.plist" >/dev/null
+done
 otool -L "$bundle/Contents/MacOS/PillSpike" | grep -q '@rpath/libPillNative.dylib'
 # Launch a relocated bundle, without build-directory library search overrides.
 mkdir -p build/packaging

@@ -7,4 +7,7 @@
 <key>CFBundleVersion</key><string>1</string>
 <key>LSUIElement</key><true/>
 <key>NSHighResolutionCapable</key><true/>
+<key>NSLocationWhenInUseUsageDescription</key><string>Pill uses Location permission only to display the current Wi-Fi network name. It does not request coordinates.</string>
+<key>NSBluetoothAlwaysUsageDescription</key><string>Pill shows paired Bluetooth devices and connects or disconnects a device only when you click its control.</string>
+<key>NSAppleEventsUsageDescription</key><string>Pill reads and controls Spotify after your request and sends confirmed restart or shutdown actions to System Events.</string>
 </dict></plist>

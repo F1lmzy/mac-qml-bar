@@ -7,6 +7,7 @@
 #include "host.h"
 #include "services/nativebridge.h"
 #include "services/audio.h"
+#include "services/system.h"
 
 int main(int argc, char **argv) {
     QGuiApplication app(argc, argv);
@@ -19,7 +20,8 @@ int main(int argc, char **argv) {
     parser.addOption({"top-offset", "Pixels from the screen top; default matches omacosy.", "pixels", "0"});
     parser.addOption({"self-test", "Run native checks, save screenshots, and exit.", "directory"});
     parser.addOption({"trace-preview", "Log local mixer focus/value changes for input diagnostics."});
-    parser.addOption({"test-audio", "Use the labelled in-memory Audio test fixture; never access hardware."});
+    parser.addOption({"test-audio", "Use labelled in-memory services; legacy alias for --test-services."});
+    parser.addOption({"test-services", "Use labelled in-memory services; no hardware, permissions, helpers or network."});
     parser.process(app);
     bool ok;
     int offset = parser.value("top-offset").toInt(&ok);
@@ -28,7 +30,9 @@ int main(int argc, char **argv) {
         return 2;
     }
     registerNativeServices();
-    registerAudioService(parser.isSet("test-audio") || parser.isSet("self-test"));
+    const bool testServices = parser.isSet("test-services") || parser.isSet("test-audio") || parser.isSet("self-test");
+    registerAudioService(testServices);
+    registerSystemService(testServices);
     QQmlApplicationEngine engine;
     engine.addImportPath("qrc:/qml/modules");
     engine.load(QUrl("qrc:/qml/shell.qml"));
@@ -44,6 +48,10 @@ int main(int argc, char **argv) {
     pill->setProperty("tracePreview", parser.isSet("trace-preview"));
     QObject::connect(pill, SIGNAL(quitRequested()), &app, SLOT(quit()));
     Host host(*view, *pill, offset, parser.isSet("self-test"));
+    if (auto *system = engine.singletonInstance<System *>(qmlTypeId("Pill.MacOS", 1, 0, "System"))) {
+        QObject::connect(system, &System::focusTransferred, &host, &Host::forgetFocusRestore);
+        QObject::connect(&app, &QCoreApplication::aboutToQuit, system, &System::prepareForExit);
+    }
     view->show();
     host.syncGeometry();
     if (parser.isSet("self-test")) host.runSelfTest(parser.value("self-test"));
