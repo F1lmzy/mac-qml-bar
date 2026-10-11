@@ -31,14 +31,36 @@ The addresses and CoreAudio call patterns are retained. OSStatus checks,
 channel enumeration, independent read/write capabilities, normalized values,
 worker-queue delivery and removable observation closures replace the donor's
 unchecked, rounded, presentation-coupled implementations. AudioController.swift
-and AudioService.swift are new lifecycle/state adapters. Device enumeration,
-device selection, input gain, Model, set/repaint and AppKit presentation are
-not copied. The audited source hash remains unchanged.
+and AudioService.swift are new lifecycle/state adapters. Output enumeration and
+selection are now adapted separately in OutputDevicesIntegration.swift.
+Input gain, Model, set/repaint and AppKit presentation are not copied.
+The audited source hash remains unchanged.
+
+The full native expansion additionally adapts these audited donor sections:
+
+| Pill source | Donor ranges and adaptation |
+| --- | --- |
+| DisplayIntegration.swift | 39–43, 840–869 and 1516–1545: optional DisplayServices brightness; 909–980: optional CoreBrightness Night Shift ABI. 796–837: shade concept and normalized floor, now exact transfer-table capture/restoration instead of formulas/shared file writes. Private notification registrations are not copied; removable screen/wake notifications and 2–3 second fallback reads replace them. |
+| BatteryIntegration.swift | 645–669 and 3608–3613: IOKit reads and owned notification run-loop source; unavailable/UPS filtering and cleanup are new. |
+| WifiIntegration.swift | 870–907, 982–997, 1576–1650 and 3663–3680: Location policy, CoreWLAN details and dynamic-store callbacks; explicit consent, interface re-resolution and removable sources replace global startup. |
+| BluetoothIntegration.swift | 52–53, 999–1085 and 1652–1673: authorization gate, optional private power probe, paired device actions; worker serialization and 10-second reconciliation replace unsafe global callbacks. |
+| WindowManagerIntegration/Models.swift | 85–167, 379–530 and 3142–3355: executable discovery, AeroSpace/OmniWM snapshots and explicit workspace actions. New checked subprocess transport, AeroSpace subscription, bounded reconnect, stale-model leases, floating-window counts and parser fixtures replace unchecked shell/global surfaces. OmniWM watch is not copied; 15-second queries are the declared fallback. |
+| SpotifyIntegration.swift | 533–592, 2723–2734 and 3699–3713: distributed metadata, running-app observation and fixed playback actions. Startup AppleScript is excluded; explicit queries/actions report Automation failure. |
+| DesktopIntegration/MenuIntegration.swift | 1692–1722, 1739–1914 and 3357–3371: settings/power actions, front-app tracking and AX menu navigation; confirmation, timeouts, ID/title checks and worker delivery are new. |
+| WeatherIntegration.swift | 1140–1209: wttr.in request and JSON fields. Now opt-in, checked HTTP, bounded parse, cancellation and unavailable errors. |
+| ThemeIntegration.swift | 317–339, 1720–1721 and 3382–3400: theme-path reads, next-theme and wallpaper-resync helper actions. Never run helpers at startup; require confirmed UI actions. |
+| OutputDevicesIntegration.swift | 734–779: output enumeration/default selection; checked size/settable status and explicit retained-CFString release replace unchecked reads. |
+
+Integration.swift, CommandRunner.swift, CommandStream.swift, SystemService.swift,
+FakeIntegration.swift, the Qt map adapter and the system panel are new boundary,
+lifetime, test and presentation code. MIT attribution remains distributed with
+the source and inside the app. No donor-owned state/configuration files are
+written, and no donor helper has been executed by development or tests.
 
 ## Extraction map
 
-All ranges below refer to helper/bar.swift at the recorded SHA-256. They are
-candidates for later extraction, not a list of already-copied code.
+All ranges below refer to helper/bar.swift at the recorded SHA-256. This is the
+original audit map; the actual adaptations are listed above.
 
 | Service | Native logic / state | Presentation and adaptation to exclude |
 | --- | --- | --- |

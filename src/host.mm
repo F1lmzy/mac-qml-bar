@@ -157,6 +157,11 @@ void Host::updatePointer() {
     if (window.level != desiredLevel) syncGeometry();
 }
 
+void Host::forgetFocusRestore() {
+    if (previousApplication) CFBridgingRelease(previousApplication);
+    previousApplication = nullptr;
+}
+
 void Host::updateMode() {
     expanded = pill.property("expanded").toBool();
     NSWindow *window = nativeWindow(view);
@@ -224,9 +229,10 @@ void Host::runSelfTest(const QString &directory) {
         };
         switch (*phase) {
         case 0:
-            if (!view.property("nativeBridgeReady").toBool() || !view.property("nativeAudioReady").toBool()) return;
+            if (!view.property("nativeBridgeReady").toBool() || !view.property("nativeAudioReady").toBool() || !view.property("nativeSystemReady").toBool()) return;
             check(view.property("nativeBridgeReady").toBool(), "packaged Swift callback reaches QML");
             check(view.property("nativeAudioReady").toBool(), "packaged Audio test fixture reaches QML without hardware");
+        check(view.property("nativeSystemReady").toBool(), "packaged system fixtures reach QML without permissions");
             check(window.level == -20, "collapsed native level");
             check(window.collectionBehavior & NSWindowCollectionBehaviorCanJoinAllSpaces, "joins Spaces");
             check(atSize(collapsed), "collapsed frame fits Ricelin pill");
@@ -277,6 +283,20 @@ void Host::runSelfTest(const QString &directory) {
             break;
         }
         case 5:
+            if (!atSize(collapsed) || root->property("transitioning").toBool()) return;
+            QMetaObject::invokeMethod(root, "openSystem");
+            break;
+        case 6: {
+            const auto system = root->property("systemSize").toSizeF();
+            if (!atSize(system) || root->findChild<QQuickItem *>("systemPanel")->opacity() < 0.99) return;
+            check(atSize(system) && panel.visible, "system panel has bounded native geometry and catcher");
+            capture("system");
+            QKeyEvent escape(QEvent::KeyPress, Qt::Key_Escape, Qt::NoModifier);
+            QCoreApplication::sendEvent(&view, &escape);
+            check(!root->property("expanded").toBool(), "Escape dismisses system controls");
+            break;
+        }
+        case 7:
             if (!atSize(collapsed) || root->property("transitioning").toBool()) return;
             timer->stop();
             QCoreApplication::exit(*failed ? 1 : 0);

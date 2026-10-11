@@ -227,12 +227,13 @@ TestCase {
         for (const name of ["vibranceFader", "devicePicker", "dndChip", "awakeChip", "nightChip"])
             compare(findChild(pill, name).enabled, false, name)
     }
-    function test_sourceThemeAndPlaceholders() {
+    function test_sourceThemeAndUnavailableSystemState() {
         compare(Theme.cream, Qt.color("#e6d6cb"))
         compare(Theme.vermLit, Qt.color("#e0563b"))
         compare(Theme.dyn, false)
-        compare(DemoState.workspaceIds, [1, 2, 3, 4, 5])
-        compare(DemoState.mediaTitle, "Media preview")
+        pill.systemService = null
+        compare(pill.mapValue(pill.systemService, "windowManager").workspaces, undefined)
+        compare(pill.mapValue(pill.systemService, "spotify").title, undefined)
     }
     function test_keyboardAdjustsVolume() {
         pill.open()

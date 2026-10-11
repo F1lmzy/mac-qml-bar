@@ -1,5 +1,7 @@
 # Native service boundary
 
+The expanded System integration contract is documented in integrations.md.
+
 ## Implemented checkpoint
 
 PLAN.md tasks 1 and 2 and the Audio service for task 3 are implemented. The

@@ -13,6 +13,7 @@ public:
 public slots:
     void syncGeometry();
     void updateMode();
+    void forgetFocusRestore();
 private:
     void updatePointer();
     QQuickWindow &view;

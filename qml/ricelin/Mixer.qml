@@ -2,8 +2,8 @@ import QtQuick
 import QtQuick.Controls.Basic
 import "Singletons"
 
-// Adapted Ricelin Mixer header and filament-fader layout. Brightness and mic
-// stay local previews; volume and mute drive the injected Audio service. With
+// Adapted Ricelin mixer layout. Brightness, volume and mute use observed
+// native state; unsupported mic/vibrance controls stay disabled. With
 // no service injected every hardware-backed control stays disabled rather than
 // showing a plausible-looking value.
 PillSurface {
@@ -15,8 +15,11 @@ PillSurface {
     mBottom: 12
     property bool tracePreview: false
     property var audioService: null
-    property real previewBrightness: 0.7
-    property real previewMic: 0.6
+    property var systemService: null
+    property real requestedBrightness: NaN
+    property string brightnessDisplay: ""
+    property string brightnessGestureDisplay: ""
+    property bool brightnessGestureCanceled: false
     property int focusIndex: -1
     // Local drag feedback only. The observed device value stays the source of
     // truth, and a queued command never counts as a confirmed write.
@@ -25,6 +28,8 @@ PillSurface {
     property string gestureDevice: ""
     property bool volumeGestureCanceled: false
 
+    readonly property var brightnessState: systemService && systemService.brightness ? systemService.brightness : ({})
+    readonly property bool brightnessEnabled: brightnessState.available === true && brightnessState.known === true && brightnessState.canSet === true
     readonly property bool volumeReady: audioService !== null && audioService.available && audioService.volumeKnown
     readonly property bool volumeEnabled: volumeReady && audioService.canSetVolume
     readonly property bool muteEnabled: audioService !== null && audioService.available
@@ -34,16 +39,15 @@ PillSurface {
         : (audioService.canSetVolume ? (audioService.testBackend ? "Volume TEST" : "Volume LIVE") : "Read only")
 
     // Keyboard navigation deliberately skips the disabled fourth visual column.
-    readonly property var faders: [brFader, volFader, micFader]
+    readonly property var faders: [brFader, volFader]
     signal quitRequested()
+    signal requestSystem()
 
     onActiveChanged: {
         focusIndex = active ? 0 : -1
         if (!active) clearFeedback()
     }
     onFocusIndexChanged: if (tracePreview) console.info("preview-focus", focusIndex)
-    onPreviewBrightnessChanged: if (tracePreview) console.info("preview-brightness", previewBrightness)
-    onPreviewMicChanged: if (tracePreview) console.info("preview-mic", previewMic)
     // Keep the existing input-harness trace key while the observed volume path
     // is exercised; it fires on local feedback, not on a confirmed write.
     onRequestedVolumeChanged: if (tracePreview) console.info("preview-volume", requestedVolume)
@@ -51,6 +55,20 @@ PillSurface {
     function clearFeedback() {
         requestedVolume = NaN
         feedbackDevice = ""
+        requestedBrightness = NaN
+        brightnessDisplay = ""
+    }
+    function moveBrightness(v) {
+        if (!brightnessEnabled) return
+        if (brFader.pressed && (brightnessGestureCanceled || brightnessGestureDisplay !== String(brightnessState.displayId))) { brightnessGestureCanceled = true; return }
+        requestedBrightness = v
+        brightnessDisplay = String(brightnessState.displayId)
+        if (systemService) systemService.invoke("brightness", "set", {value: v, displayId: brightnessDisplay})
+    }
+    function reconcileBrightness() {
+        if (brFader.pressed && (!brightnessEnabled || brightnessGestureDisplay !== String(brightnessState.displayId))) brightnessGestureCanceled = true
+        if (!isNaN(requestedBrightness) && (!brightnessEnabled || brightnessDisplay !== String(brightnessState.displayId)
+                || (!brFader.pressed && Math.abs(requestedBrightness - Number(brightnessState.value)) < 0.005))) requestedBrightness = NaN
     }
     function stepFocused(deltaPct) {
         if (focusIndex < 0) return
@@ -107,6 +125,14 @@ PillSurface {
         }
         function onErrorOccurred(operation, code, message) { root.clearFeedback() }
     }
+    Connections {
+        target: root.systemService
+        enabled: root.systemService !== null
+        function onStateChanged() { root.reconcileBrightness() }
+        function onErrorOccurred(domain, operation, code, message) {
+            if (domain === "brightness") { root.requestedBrightness = NaN; root.brightnessGestureCanceled = brFader.pressed }
+        }
+    }
 
     component IconChip: Button {
         id: chip
@@ -160,7 +186,7 @@ PillSurface {
             }
             Text {
                 anchors.verticalCenter: parent.verticalCenter
-                text: "PREVIEW"
+                text: !root.audioService && !root.systemService ? "UNAVAILABLE" : (root.audioService && root.audioService.testBackend ? "TEST" : "NATIVE")
                 color: Theme.faint
                 font.family: Theme.font
                 font.pixelSize: 8 * root.s
@@ -181,10 +207,10 @@ PillSurface {
                 enabled: root.muteEnabled
                 onClicked: if (root.audioService) root.audioService.setMuted(!root.audioService.muted)
             }
-            IconChip { objectName: "devicePicker"; glyph: "speaker"; text: "Device selection not connected"; enabled: false }
+            IconChip { objectName: "devicePicker"; glyph: "speaker"; text: "System controls"; enabled: root.systemService !== null; onClicked: root.requestSystem() }
             IconChip { objectName: "dndChip"; glyph: "dnd"; text: "Do not disturb not connected"; enabled: false }
             IconChip { objectName: "awakeChip"; glyph: "awake"; text: "Keep-awake not connected"; enabled: false }
-            IconChip { objectName: "nightChip"; glyph: "sun"; text: "Night light not connected"; enabled: false }
+            IconChip { objectName: "nightChip"; glyph: "sun"; text: root.systemService && root.systemService.display && root.systemService.display.nightShiftKnown ? "Toggle Night Shift" : "Night Shift unavailable"; enabled: root.systemService !== null && root.systemService.display && root.systemService.display.nightShiftKnown === true && root.systemService.display.canSetNightShift === true; onClicked: root.systemService.invoke("display", "setNightShift", !root.systemService.display.nightShiftEnabled) }
             IconChip { glyph: "close"; text: "Close mixer"; onClicked: root.requestClose() }
             IconChip { glyph: "logout"; text: "Quit pill"; onClicked: root.quitRequested() }
         }
@@ -211,11 +237,15 @@ PillSurface {
             width: parent.colW
             s: root.s
             icon: "sun"
-            value: root.previewBrightness
-            valueLabel: Math.round(value * 100) + "%"
-            subLabel: "Brightness"
+            enabled: root.brightnessEnabled
+            opacity: enabled ? 1 : 0.35
+            value: !isNaN(root.requestedBrightness) ? root.requestedBrightness : (root.brightnessState.known ? root.brightnessState.value : 0)
+            valueLabel: root.brightnessState.known ? Math.round(value * 100) + "%" : "--"
+            subLabel: root.brightnessEnabled ? "Brightness" : "Unavailable"
             focused: root.active && root.focusIndex === 0
-            onMoved: (v) => root.previewBrightness = v
+            onGestureStarted: { root.brightnessGestureDisplay = String(root.brightnessState.displayId || ""); root.brightnessGestureCanceled = false }
+            onMoved: (v) => root.moveBrightness(v)
+            onCommitted: { root.reconcileBrightness(); root.brightnessGestureDisplay = "" }
             HoverHandler { onHoveredChanged: if (hovered) root.focusIndex = 0 }
         }
         VFader {
@@ -255,12 +285,12 @@ PillSurface {
             width: parent.colW
             s: root.s
             icon: "mic"
-            value: root.previewMic
-            valueLabel: Math.round(value * 100) + "%"
-            subLabel: "Mic"
-            focused: root.active && root.focusIndex === 2
-            onMoved: (v) => root.previewMic = v
-            HoverHandler { onHoveredChanged: if (hovered) root.focusIndex = 2 }
+            value: 0
+            valueLabel: "--"
+            subLabel: "Mic unavailable"
+            opacity: 0.35
+            enabled: false
+            focused: false
         }
     }
 }

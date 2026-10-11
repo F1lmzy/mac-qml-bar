@@ -11,27 +11,30 @@ Item {
     property real s: Flags.uiScale
     property bool tracePreview: false
     property var audioService: null
+    property var systemService: null
     property bool hovered: false
     property bool hoverHeld: false
     property string surface: ""
-    readonly property bool expanded: surface === "mixer"
-    readonly property string mode: expanded ? "mixer" : hoverHeld ? "hover" : "rest"
+    readonly property bool expanded: surface === "mixer" || surface === "system"
+    readonly property string mode: expanded ? surface : hoverHeld ? "hover" : "rest"
     readonly property real restW: 160 * s
     readonly property real restH: 38 * s
     readonly property real hoverPad: 20 * s
     readonly property real hoverH: 58 * s
     readonly property real mixerH: 214 * s
+    readonly property real systemH: 430 * s
     readonly property real restCorner: 18 * s
     readonly property real openCorner: 22 * s
     readonly property size collapsedSize: Qt.size(restW, restH)
     readonly property size hoverSize: Qt.size(hoverRow.implicitWidth + 2 * hoverPad, hoverH)
     readonly property size mixerSize: Qt.size(93 * 4 * s, mixerH)
-    readonly property size targetSize: expanded ? mixerSize : hoverHeld ? hoverSize : collapsedSize
+    readonly property size systemSize: Qt.size(93 * 4 * s, systemH)
+    readonly property size targetSize: surface === "system" ? systemSize : surface === "mixer" ? mixerSize : hoverHeld ? hoverSize : collapsedSize
     readonly property real targetW: targetSize.width
     readonly property real targetH: targetSize.height
     readonly property bool morphing: morphAnimW.running || morphAnimH.running || morphAnimR.running
     readonly property bool transitioning: morphing || restFade.running || hoverFade.running
-    property real morphRadius: mode === "mixer" ? openCorner : restCorner
+    property real morphRadius: expanded ? openCorner : restCorner
     property string lastMode: "rest"
     property bool hoverHop: false
     readonly property real morphCloseness: {
@@ -42,7 +45,9 @@ Item {
     height: targetH
     signal quitRequested()
 
+    function mapValue(service, key) { return service && service[key] && typeof service[key] === "object" ? service[key] : ({}) }
     function open() { surface = "mixer"; forceActiveFocus() }
+    function openSystem() { surface = "system"; forceActiveFocus() }
     function dismiss() { surface = ""; hovered = false; hoverHeld = false; leaveDelay.stop() }
     onHoveredChanged: {
         if (hovered) { leaveDelay.stop(); hoverHeld = true }
@@ -68,7 +73,8 @@ Item {
     }
     Keys.onPressed: (event) => {
         if (event.key === Qt.Key_Escape) { dismiss(); event.accepted = true }
-        else if (expanded) {
+        else if (surface === "system" && event.key === Qt.Key_Back) { surface = "mixer"; event.accepted = true }
+        else if (surface === "mixer") {
             if (event.key === Qt.Key_Left) { mixer.moveFocus(-1); event.accepted = true }
             if (event.key === Qt.Key_Right) { mixer.moveFocus(1); event.accepted = true }
             if (event.key === Qt.Key_Up) { mixer.stepFocused(1); event.accepted = true }
@@ -117,7 +123,7 @@ Item {
         Row {
             anchors.centerIn: parent
             spacing: 9 * pill.s
-            Text {
+            Text { textFormat: Text.PlainText;
                 anchors.verticalCenter: parent.verticalCenter
                 text: "時"
                 color: Theme.cream
@@ -127,7 +133,7 @@ Item {
                 style: Text.Outline
                 styleColor: Qt.alpha(Theme.vermLit, 0.5)
             }
-            Text {
+            Text { textFormat: Text.PlainText;
                 anchors.verticalCenter: parent.verticalCenter
                 text: clock.hhmm
                 color: Theme.cream
@@ -157,6 +163,9 @@ Item {
                 height: implicitHeight
                 s: pill.s
                 gap: 8 * pill.s
+                systemService: pill.systemService
+                focusedWorkspace: pill.mapValue(pill.systemService, "windowManager").focusedWorkspace || ""
+                onWorkspaceRequested: (id) => { if (pill.systemService) pill.systemService.invoke("windowManager", "switchWorkspace", id) }
             }
             Rectangle {
                 anchors.verticalCenter: parent.verticalCenter
@@ -167,7 +176,7 @@ Item {
             Column {
                 anchors.verticalCenter: parent.verticalCenter
                 spacing: 2 * pill.s
-                Text {
+                Text { textFormat: Text.PlainText;
                     anchors.horizontalCenter: parent.horizontalCenter
                     text: clock.hhmm
                     color: Theme.cream
@@ -175,8 +184,9 @@ Item {
                     font.pixelSize: 18 * pill.s
                     font.weight: Font.DemiBold
                     font.features: { "tnum": 1 }
+                    TapHandler { onTapped: pill.open() }
                 }
-                Text {
+                Text { textFormat: Text.PlainText;
                     anchors.horizontalCenter: parent.horizontalCenter
                     text: clock.date
                     color: Theme.dim
@@ -196,8 +206,9 @@ Item {
             Column {
                 anchors.verticalCenter: parent.verticalCenter
                 spacing: 2 * pill.s
-                Text { text: DemoState.mediaTitle; color: Theme.subtle; font.family: Theme.font; font.pixelSize: 10 * pill.s }
-                Text { text: DemoState.mediaArtist; color: Theme.faint; font.family: Theme.font; font.pixelSize: 8.5 * pill.s }
+                Text { textFormat: Text.PlainText; text: pill.mapValue(pill.systemService, "spotify").known ? pill.mapValue(pill.systemService, "spotify").title : "No media"; color: Theme.subtle; font.family: Theme.font; font.pixelSize: 10 * pill.s }
+                Text { textFormat: Text.PlainText; text: pill.mapValue(pill.systemService, "spotify").known ? pill.mapValue(pill.systemService, "spotify").artist : ""; color: Theme.faint; font.family: Theme.font; font.pixelSize: 8.5 * pill.s }
+                Text { textFormat: Text.PlainText; visible: pill.mapValue(pill.systemService, "battery").available === true && pill.mapValue(pill.systemService, "battery").known === true; text: visible ? Math.round(Number(pill.mapValue(pill.systemService, "battery").charge) * 100) + "%" : ""; color: Theme.dim; font.family: Theme.font; font.pixelSize: 8 * pill.s }
             }
             GlyphIcon {
                 anchors.verticalCenter: parent.verticalCenter
@@ -206,18 +217,30 @@ Item {
                 name: "mixer"
                 color: Theme.iconDim
                 stroke: 1.7
+                TapHandler { onTapped: pill.open() }
             }
         }
-        TapHandler { onTapped: pill.open() }
     }
     Mixer {
         id: mixer
         s: pill.s
         tracePreview: pill.tracePreview
         audioService: pill.audioService
-        open: pill.expanded
+        systemService: pill.systemService
+        open: pill.surface === "mixer"
         morphCloseness: pill.morphCloseness
         onRequestClose: pill.dismiss()
+        onRequestSystem: pill.openSystem()
         onQuitRequested: pill.quitRequested()
+    }
+    SystemPanel {
+        id: systemPanel
+        anchors.fill: parent
+        s: pill.s
+        systemService: pill.systemService
+        open: pill.surface === "system"
+        morphCloseness: pill.morphCloseness
+        onRequestBack: pill.surface = "mixer"
+        onRequestClose: pill.dismiss()
     }
 }
