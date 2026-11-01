@@ -32,6 +32,83 @@ private final class WMFixture {
         }
     }
 }
+// Mirrors AeroSpace's empty-workspace CLI behavior, not the parser-only [] fixture.
+private final class EmptyWorkspaceFixture {
+    private let lock = NSLock()
+    private var focus = "4"
+    private var focusedError: IntegrationFailure?
+    private var ownUtilityFocused = false
+    func setFocus(_ workspace: String, error: IntegrationFailure? = nil, ownUtility: Bool = false) {
+        lock.lock(); defer { lock.unlock() }
+        focus = workspace; focusedError = error; ownUtilityFocused = ownUtility
+    }
+    func run(_ args: [String]) throws -> Data {
+        lock.lock(); defer { lock.unlock() }
+        let rows: [[String: Any]]
+        switch args.first {
+        case "list-workspaces":
+            rows = args.contains("--focused") ? [["workspace": focus]] :
+                ["4", "empty"].map { ["workspace": $0, "monitor-id": 1, "workspace-is-visible": $0 == focus] }
+        case "list-monitors": rows = [["monitor-id": 1, "monitor-name": "TEST"]]
+        case "list-windows":
+            if args.contains("--focused") {
+                if let error = focusedError { throw error }
+                if focus == "empty" { throw IntegrationFailure("nativeFailure", "No window is focused\n") }
+                rows = [["window-id": ownUtilityFocused ? 14 : 12]]
+            } else {
+                rows = [["window-id": 12, "workspace": "4", "app-name": "Ghostty", "window-layout": "h_tiles"]]
+                    + (ownUtilityFocused ? [["window-id": 14, "workspace": "4", "app-name": "PillSpike", "window-layout": "floating"]] : [])
+            }
+        default: throw IntegrationFailure("testFailure", "Unexpected fixture command.")
+        }
+        return try JSONSerialization.data(withJSONObject: rows)
+    }
+}
+
+func runEmptyWorkspaceTests() {
+    func spin(_ predicate: () -> Bool) {
+        let deadline = Date().addingTimeInterval(3)
+        while !predicate(), Date() < deadline { RunLoop.main.run(until: Date().addingTimeInterval(0.005)) }
+        precondition(predicate(), "empty workspace fixture timed out")
+    }
+    let driver = EmptyWorkspaceFixture()
+    let service = WindowManagerIntegration(aerospacePath: "/bin/echo", backendResolver: { "AeroSpace" },
+        runner: { _, args, _ in try driver.run(args) }, subscriptionsEnabled: false)
+    defer { service.stop() }
+    var state: [String: Any] = [:]
+    service.start { state = $0 }
+    spin { state["focusedWindow"] as? String == "12" }
+    driver.setFocus("4", ownUtility: true); service.refresh()
+    spin { service.snapshot?.focusedWindow == "" }
+    precondition(state["focusedWindow"] as? String == "12", "Same-workspace utility focus lost the previous app")
+    // No subscription event: polling must not carry focus from the old workspace.
+    driver.setFocus("empty"); service.refresh()
+    spin { state["focusedWorkspace"] as? String == "empty" && state["available"] as? Bool == true }
+    precondition((state["workspaces"] as? [[String: Any]])?.count == 2)
+    precondition(state["focusedWindow"] as? String == "", "Window focus leaked from another workspace")
+    precondition(service.snapshot?.workspaces.first(where: { $0.id == "empty" })?.windowCount == 0)
+    precondition(service.snapshot?.windows.count == 1, "Windows on other workspaces were discarded")
+    precondition(state["lastErrorCode"] as? String == "")
+
+    driver.setFocus("4"); service.refresh()
+    spin { state["focusedWindow"] as? String == "12" }
+    for failure in [IntegrationFailure("timeout", "Command timed out."),
+                    IntegrationFailure("permissionDenied", "No window is focused"),
+                    IntegrationFailure("nativeFailure", "Server is not running")] {
+        driver.setFocus("empty", error: failure); service.refresh()
+        spin { state["available"] as? Bool == false && state["lastErrorCode"] as? String == failure.code }
+        precondition(service.snapshot == nil, "Real CLI failure was ignored")
+        driver.setFocus("4"); service.refresh()
+        spin { state["focusedWindow"] as? String == "12" }
+    }
+    // Startup on an empty workspace must also retain workspace rows.
+    service.stop()
+    driver.setFocus("empty"); service.start { state = $0 }
+    spin { state["focusedWorkspace"] as? String == "empty" && state["available"] as? Bool == true }
+    precondition((state["workspaces"] as? [[String: Any]])?.count == 2)
+    print("PASS: empty AeroSpace workspace retains dots, clears window focus and preserves real failures")
+}
+
 func runLifecycleTests() throws {
     func spin(_ predicate: () -> Bool) {
         let deadline = Date().addingTimeInterval(4)

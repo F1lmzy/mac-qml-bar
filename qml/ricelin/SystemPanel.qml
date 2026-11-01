@@ -15,6 +15,7 @@ PillSurface {
     property string pendingLabel: ""
     property string pendingMenuFingerprint: ""
     signal requestBack()
+    signal requestAppearance()
     function clearPending() { pendingDomain = ""; pendingAction = ""; pendingArgument = null; pendingLabel = ""; pendingMenuFingerprint = "" }
     onActiveChanged: if (!active) clearPending()
     component PanelButton: Button {
@@ -69,7 +70,8 @@ PillSurface {
         anchors.top: parent.top; anchors.left: parent.left; anchors.right: parent.right
         height: 28 * panel.s
         Text { textFormat: Text.PlainText; anchors.verticalCenter: parent.verticalCenter; text: "SYSTEM"; color: Theme.cream; font.family: Theme.font; font.pixelSize: 11 * panel.s; font.weight: Font.DemiBold; font.letterSpacing: 1.2 * panel.s }
-        PanelButton { anchors.right: closeButton.left; anchors.rightMargin: 5 * panel.s; anchors.verticalCenter: parent.verticalCenter; text: "Back"; onClicked: panel.requestBack() }
+        PanelButton { anchors.right: backButton.left; anchors.rightMargin: 5 * panel.s; anchors.verticalCenter: parent.verticalCenter; objectName: "systemAppearanceButton"; text: "Appearance"; onClicked: panel.requestAppearance() }
+        PanelButton { id: backButton; anchors.right: closeButton.left; anchors.rightMargin: 5 * panel.s; anchors.verticalCenter: parent.verticalCenter; text: "Back"; onClicked: panel.requestBack() }
         PanelButton { id: closeButton; anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter; text: "×"; onClicked: panel.requestClose() }
     }
     Rectangle { id: divider; anchors.top: parent.top; anchors.topMargin: 33 * panel.s; width: parent.width; height: 1; color: Theme.hair }
@@ -93,7 +95,7 @@ PillSurface {
                     RowLayout {
                         width: parent.width
                         Text { textFormat: Text.PlainText; Layout.fillWidth: true; text: modelData.toUpperCase() + " · " + (serviceState.available === true ? "AVAILABLE" : "UNAVAILABLE"); color: serviceState.available ? Theme.cream : Theme.faint; font.family: Theme.font; font.pixelSize: 9 * panel.s; font.weight: Font.DemiBold }
-                        Text { textFormat: Text.PlainText; text: String(serviceState.lastError || ""); color: Theme.vermLit; font.family: Theme.font; font.pixelSize: 8 * panel.s; elide: Text.ElideRight; Layout.maximumWidth: parent.width * 0.48 }
+                        Text { textFormat: Text.PlainText; text: String(serviceState.lastError || ""); color: Theme.error; font.family: Theme.font; font.pixelSize: 8 * panel.s; elide: Text.ElideRight; Layout.maximumWidth: parent.width * 0.48 }
                     }
                     Text { textFormat: Text.PlainText; visible: modelData === "wifi" && serviceState.ssidKnown === true; text: "Network: " + String(serviceState.ssid); color: Theme.subtle; font.family: Theme.font; font.pixelSize: 8 * panel.s }
                     Text { textFormat: Text.PlainText; visible: modelData === "battery" && serviceState.known === true; text: Math.round(Number(serviceState.charge) * 100) + "%" + (serviceState.charging ? " · charging" : ""); color: Theme.subtle; font.family: Theme.font; font.pixelSize: 8 * panel.s }

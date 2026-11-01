@@ -94,6 +94,81 @@ TestCase {
         compare(system.calls[0].action, "switchWorkspace")
         compare(system.calls[0].argument, "web")
     }
+    function test_restShowsOnlyFirstFiveWorkspacesWithoutChangingClock() {
+        const previous = system.windowManager
+        try {
+            system.windowManager = {available: true, backend: "AeroSpace", canSwitch: true, focusedWorkspace: "3", workspaces: [
+                {id: "1", visible: false}, {id: "2", visible: false}, {id: "3", visible: true},
+                {id: "4", visible: false}, {id: "5", visible: false}, {id: "6", visible: false},
+                {id: "7", visible: false}, {id: "8", visible: false}, {id: "9", visible: false}
+            ]}
+            tryCompare(pill, "width", 160)
+            tryCompare(pill, "height", 32)
+            tryCompare(findChild(pill, "restContent"), "opacity", 1)
+            const dots = findChild(pill, "restWorkspaces")
+            verify(dots !== null)
+            compare(dots.shownCount, 5)
+            compare(dots.showOverflow, false)
+            for (let id = 1; id <= 5; id++)
+                verify(findChild(dots, "workspaceDot_" + id) !== null)
+            verify(findChild(dots, "workspaceDot_6") === null)
+            const clock = findChild(pill, "restClock")
+            verify(clock !== null)
+            compare(clock.font.pixelSize, 16)
+            verify(dots.x + dots.width < clock.x)
+            const active = findChild(dots, "workspaceDot_3")
+            verify(active.focused)
+            compare(active.color, Theme.vermLit)
+            system.windowManager = Object.assign({}, system.windowManager, {focusedWorkspace: "5"})
+            verify(findChild(dots, "workspaceDot_5").focused)
+            verify(!active.focused)
+            system.windowManager = Object.assign({}, system.windowManager, {focusedWorkspace: "8"})
+            for (let id = 1; id <= 5; id++)
+                verify(!findChild(dots, "workspaceDot_" + id).focused)
+            compare(dots.shownCount, 5) // Do not substitute an out-of-range active workspace.
+            compare(system.calls.length, 0)
+        } finally {
+            system.windowManager = previous
+        }
+    }
+
+    function test_emptyFocusedWorkspaceKeepsRestDots() {
+        const previous = system.windowManager
+        try {
+            system.windowManager = {available: true, backend: "AeroSpace", canSwitch: true,
+                focusedWorkspace: "2", focusedWindow: "", windows: [], workspaces: [
+                    {id: "1", visible: false, windowCount: 0},
+                    {id: "2", visible: true, windowCount: 0}
+                ]}
+            tryCompare(pill, "height", pill.restH)
+            tryCompare(findChild(pill, "restContent"), "opacity", 1)
+            const dots = findChild(pill, "restWorkspaces")
+            compare(dots.shownCount, 2)
+            verify(dots.visible)
+            verify(findChild(dots, "workspaceDot_2").focused)
+            compare(system.calls.length, 0)
+        } finally {
+            system.windowManager = previous
+        }
+    }
+
+    function test_restWorkspaceDotsHandleFewerAndUnavailableRows() {
+        const previous = system.windowManager
+        try {
+            tryCompare(pill, "height", pill.restH)
+            const dots = findChild(pill, "restWorkspaces")
+            verify(dots !== null)
+            compare(dots.shownCount, 2)
+            system.windowManager = {available: false, canSwitch: false, workspaces: []}
+            compare(dots.shownCount, 0)
+            pill.systemService = null
+            compare(dots.shownCount, 0)
+        } finally {
+            system.windowManager = previous
+            pill.systemService = system
+        }
+    }
+
     function test_externalWorkspaceChangeUpdatesHighlightImmediately() {
         pill.hovered = true
         tryCompare(pill, "width", pill.hoverSize.width)

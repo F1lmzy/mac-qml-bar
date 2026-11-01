@@ -3,9 +3,8 @@ import QtQuick
 import Quickshell
 
 Singleton {
-    // Dynamic wallpaper branches in upstream Theme are intentionally unreachable.
-    // No Dyn service is provided; this subset offers only the fixed palette.
-    readonly property string paletteMode: "static"
+    // The active mac-themer palette is delivered by the native System service.
+    readonly property string paletteMode: "system"
     readonly property string uiFont: "Helvetica Neue"
     property bool reduceMotion: false
     readonly property real uiScale: 1

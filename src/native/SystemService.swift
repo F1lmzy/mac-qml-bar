@@ -18,7 +18,7 @@ public final class SystemService: NSObject {
             integrations = ["brightness": BrightnessIntegration(), "display": DisplayIntegration(), "battery": BatteryIntegration(),
                             "wifi": WifiIntegration(), "bluetooth": BluetoothIntegration(), "spotify": SpotifyIntegration(),
                             "desktop": DesktopIntegration(), "menus": MenuIntegration(), "weather": WeatherIntegration(),
-                            "theme": ThemeIntegration(), "outputDevices": OutputDevicesIntegration(), "windowManager": WindowManagerIntegration()]
+                            "theme": Self.sharedThemeEnabled ? ServiceOwnedThemeIntegration() : ThemeIntegration(), "outputDevices": OutputDevicesIntegration(), "windowManager": WindowManagerIntegration()]
         }
         for (domain, service) in integrations {
             service.start { [weak self] state in
@@ -26,6 +26,11 @@ public final class SystemService: NSObject {
                 self?.callback?(domain, state as NSDictionary)
             }
         }
+    }
+    // Fixture mode takes the separate fake branch above. A shared-service
+    // frontend must not construct its own theme watcher, catalog or CLI backend.
+    static var sharedThemeEnabled: Bool {
+        !(ProcessInfo.processInfo.environment["MACCER_SERVICE_SOCKET"] ?? "").isEmpty
     }
     @objc public func invoke(domain: String, action: String, argument: Any) {
         precondition(Thread.isMainThread)
@@ -61,4 +66,17 @@ public final class SystemService: NSObject {
         integrations.values.forEach { $0.stop() }; integrations.removeAll()
     }
     deinit { precondition(Thread.isMainThread); stop(); Self.liveInstanceCount -= 1 }
+}
+
+final class ServiceOwnedThemeIntegration: PillIntegration {
+    override func refresh() {
+        publish(["available": false, "canNext": false, "canSelect": false,
+                 "canNextBackground": false, "canSetBackground": false, "canResyncWallpaper": false,
+                 "themes": [[String: String]](), "wallpapers": [[String: String]](),
+                 "catalogLoading": false, "busy": false,
+                 "catalogError": "Theme state is owned by the Maccer service; catalogs and changes are not available yet."])
+    }
+    override func invoke(_ action: String, _ argument: Any) {
+        fail(action, "serviceOwned", "Theme changes must be provided by the Maccer service.")
+    }
 }

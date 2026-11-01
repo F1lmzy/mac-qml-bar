@@ -12,13 +12,14 @@ Item {
     property bool tracePreview: false
     property var audioService: null
     property var systemService: null
+    property var launcherService: null
     property bool hovered: false
     property bool hoverHeld: false
     property string surface: ""
-    readonly property bool expanded: surface === "mixer" || surface === "system"
+    readonly property bool expanded: surface === "mixer" || surface === "system" || surface === "launcher" || surface === "appearance" || surface === "wallpaper"
     readonly property string mode: expanded ? surface : hoverHeld ? "hover" : "rest"
     readonly property real restW: 160 * s
-    readonly property real restH: 38 * s
+    readonly property real restH: 32 * s
     readonly property real hoverPad: 20 * s
     readonly property real hoverH: 58 * s
     readonly property real mixerH: 214 * s
@@ -29,11 +30,16 @@ Item {
     readonly property size hoverSize: Qt.size(hoverRow.implicitWidth + 2 * hoverPad, hoverH)
     readonly property size mixerSize: Qt.size(93 * 4 * s, mixerH)
     readonly property size systemSize: Qt.size(93 * 4 * s, systemH)
-    readonly property size targetSize: surface === "system" ? systemSize : surface === "mixer" ? mixerSize : hoverHeld ? hoverSize : collapsedSize
+    readonly property size launcherSize: Qt.size(480 * s, 380 * s)
+    // Height fits the 3x2 grid of square cards with no dead space: the card is
+    // the column width, so two rows plus one gap have to equal the content area.
+    readonly property size appearanceSize: Qt.size(420 * s, 420 * s)
+    readonly property size wallpaperSize: Qt.size(560 * s, 236 * s)
+    readonly property size targetSize: surface === "wallpaper" ? wallpaperSize : surface === "appearance" ? appearanceSize : surface === "launcher" ? launcherSize : surface === "system" ? systemSize : surface === "mixer" ? mixerSize : hoverHeld ? hoverSize : collapsedSize
     readonly property real targetW: targetSize.width
     readonly property real targetH: targetSize.height
     readonly property bool morphing: morphAnimW.running || morphAnimH.running || morphAnimR.running
-    readonly property bool transitioning: morphing || restFade.running || hoverFade.running
+    readonly property bool transitioning: morphing || restFade.running || hoverFade.running || launcherPanel.opacity > 0.01 && surface !== "launcher"
     property real morphRadius: expanded ? openCorner : restCorner
     property string lastMode: "rest"
     property bool hoverHop: false
@@ -44,10 +50,26 @@ Item {
     width: targetW
     height: targetH
     signal quitRequested()
+    signal launcherPresented()
 
     function mapValue(service, key) { return service && service[key] && typeof service[key] === "object" ? service[key] : ({}) }
     function open() { surface = "mixer"; forceActiveFocus() }
     function openSystem() { surface = "system"; forceActiveFocus() }
+    function openLauncher() {
+        surface = "launcher"
+        Qt.callLater(launcherPanel.focusField)
+        launcherPresented()
+    }
+    function openAppearance() { surface = "appearance"; forceActiveFocus() }
+    function openWallpaper() { surface = "wallpaper"; forceActiveFocus() }
+    function toggleLauncher() { if (surface === "launcher") dismiss(); else openLauncher() }
+    Connections {
+        target: pill.launcherService
+        function onToggleRequested() { pill.toggleLauncher() }
+        // The shared backend shows the frontend; opening again must not close an
+        // already-visible launcher, so this is open, not toggle.
+        function onShowRequested() { pill.openLauncher() }
+    }
     function dismiss() { surface = ""; hovered = false; hoverHeld = false; leaveDelay.stop() }
     onHoveredChanged: {
         if (hovered) { leaveDelay.stop(); hoverHeld = true }
@@ -72,13 +94,31 @@ Item {
         NumberAnimation { id: morphAnimR; duration: pill.hoverHop ? Motion.glide : Motion.morph; easing.type: Motion.easeMorph; easing.bezierCurve: Motion.morphCurve }
     }
     Keys.onPressed: (event) => {
-        if (event.key === Qt.Key_Escape) { dismiss(); event.accepted = true }
-        else if (surface === "system" && event.key === Qt.Key_Back) { surface = "mixer"; event.accepted = true }
+        const key = event.key
+        if (surface === "appearance") {
+            if (key === Qt.Key_Escape) { appearancePanel.handleEscape(); event.accepted = true }
+            else if (key === Qt.Key_Back) { surface = "mixer"; event.accepted = true }
+            else if (key === Qt.Key_Left) { appearancePanel.moveSelection(-1, 0); event.accepted = true }
+            else if (key === Qt.Key_Right) { appearancePanel.moveSelection(1, 0); event.accepted = true }
+            else if (key === Qt.Key_Up) { appearancePanel.moveSelection(0, -1); event.accepted = true }
+            else if (key === Qt.Key_Down) { appearancePanel.moveSelection(0, 1); event.accepted = true }
+            else if (key === Qt.Key_Return || key === Qt.Key_Enter) { appearancePanel.activateFocused(); event.accepted = true }
+        } else if (surface === "wallpaper") {
+            // Escape cancels a pending confirmation first, then steps back to
+            // the theme grid; the carousel never dismisses the pill itself.
+            if (key === Qt.Key_Escape) { if (!wallpaperPanel.handleEscape()) surface = "appearance"; event.accepted = true }
+            else if (key === Qt.Key_Back) { surface = "appearance"; event.accepted = true }
+            else if (key === Qt.Key_Left) { wallpaperPanel.move(-1); event.accepted = true }
+            else if (key === Qt.Key_Right) { wallpaperPanel.move(1); event.accepted = true }
+            else if (key === Qt.Key_Return || key === Qt.Key_Enter) { wallpaperPanel.activate(); event.accepted = true }
+        } else if (surface === "launcher" && key === Qt.Key_Escape) { launcherPanel.handleEscape(); event.accepted = true }
+        else if (key === Qt.Key_Escape) { dismiss(); event.accepted = true }
+        else if (surface === "system" && key === Qt.Key_Back) { surface = "mixer"; event.accepted = true }
         else if (surface === "mixer") {
-            if (event.key === Qt.Key_Left) { mixer.moveFocus(-1); event.accepted = true }
-            if (event.key === Qt.Key_Right) { mixer.moveFocus(1); event.accepted = true }
-            if (event.key === Qt.Key_Up) { mixer.stepFocused(1); event.accepted = true }
-            if (event.key === Qt.Key_Down) { mixer.stepFocused(-1); event.accepted = true }
+            if (key === Qt.Key_Left) { mixer.moveFocus(-1); event.accepted = true }
+            if (key === Qt.Key_Right) { mixer.moveFocus(1); event.accepted = true }
+            if (key === Qt.Key_Up) { mixer.stepFocused(1); event.accepted = true }
+            if (key === Qt.Key_Down) { mixer.stepFocused(-1); event.accepted = true }
         }
     }
 
@@ -89,8 +129,8 @@ Item {
         border.width: 1
         border.color: Theme.border
         gradient: Gradient {
-            GradientStop { position: 0; color: Qt.alpha(Theme.cardTop, Flags.pillOpacity) }
-            GradientStop { position: 1; color: Qt.alpha(Theme.cardBot, Flags.pillOpacity) }
+            GradientStop { position: 0; color: Qt.alpha(Theme.cardTop, Flags.pillOpacity * Theme.backgroundOpacity) }
+            GradientStop { position: 1; color: Qt.alpha(Theme.cardBot, Flags.pillOpacity * Theme.backgroundOpacity) }
         }
         Rectangle {
             anchors.top: parent.top
@@ -123,17 +163,22 @@ Item {
         Row {
             anchors.centerIn: parent
             spacing: 9 * pill.s
-            Text { textFormat: Text.PlainText;
+            Workspaces {
+                objectName: "restWorkspaces"
                 anchors.verticalCenter: parent.verticalCenter
-                text: "時"
-                color: Theme.cream
-                font.family: Theme.fontJp
-                font.weight: Font.Medium
-                font.pixelSize: 15 * pill.s
-                style: Text.Outline
-                styleColor: Qt.alpha(Theme.vermLit, 0.5)
+                width: implicitWidth
+                height: implicitHeight
+                visible: shownCount > 0
+                enabled: false // Rest indicators; the hover row keeps workspace switching.
+                s: pill.s
+                gap: 4 * pill.s
+                maximumCount: 5
+                showOverflow: false
+                systemService: pill.systemService
+                focusedWorkspace: pill.mapValue(pill.systemService, "windowManager").focusedWorkspace || ""
             }
             Text { textFormat: Text.PlainText;
+                objectName: "restClock"
                 anchors.verticalCenter: parent.verticalCenter
                 text: clock.hhmm
                 color: Theme.cream
@@ -211,6 +256,30 @@ Item {
                 Text { textFormat: Text.PlainText; visible: pill.mapValue(pill.systemService, "battery").available === true && pill.mapValue(pill.systemService, "battery").known === true; text: visible ? Math.round(Number(pill.mapValue(pill.systemService, "battery").charge) * 100) + "%" : ""; color: Theme.dim; font.family: Theme.font; font.pixelSize: 8 * pill.s }
             }
             GlyphIcon {
+                objectName: "appearanceButton"
+                anchors.verticalCenter: parent.verticalCenter
+                width: 24 * pill.s
+                height: 24 * pill.s
+                name: "palette"
+                color: Theme.iconDim
+                TapHandler { onTapped: pill.openAppearance() }
+                Accessible.role: Accessible.Button
+                Accessible.name: "Themes and backgrounds"
+                Accessible.onPressAction: pill.openAppearance()
+            }
+            GlyphIcon {
+                objectName: "launcherButton"
+                anchors.verticalCenter: parent.verticalCenter
+                width: 24 * pill.s
+                height: 24 * pill.s
+                name: "app-window"
+                color: Theme.iconDim
+                TapHandler { onTapped: pill.openLauncher() }
+                Accessible.role: Accessible.Button
+                Accessible.name: "Open launcher"
+                Accessible.onPressAction: pill.openLauncher()
+            }
+            GlyphIcon {
                 anchors.verticalCenter: parent.verticalCenter
                 width: 18 * pill.s
                 height: 18 * pill.s
@@ -233,6 +302,35 @@ Item {
         onRequestSystem: pill.openSystem()
         onQuitRequested: pill.quitRequested()
     }
+    Launcher {
+        id: launcherPanel
+        s: pill.s
+        service: pill.launcherService
+        open: pill.surface === "launcher"
+        morphCloseness: pill.morphCloseness
+        onRequestClose: pill.dismiss()
+    }
+    Appearance {
+        id: appearancePanel
+        s: pill.s
+        systemService: pill.systemService
+        themeSource: pill.launcherService && pill.launcherService.serviceMode && pill.launcherService.themeState ? pill.launcherService.themeState : null
+        open: pill.surface === "appearance"
+        morphCloseness: pill.morphCloseness
+        onRequestBack: pill.surface = "mixer"
+        onRequestBackgrounds: pill.openWallpaper()
+        onRequestClose: pill.dismiss()
+    }
+    WallpaperCarousel {
+        id: wallpaperPanel
+        s: pill.s
+        systemService: pill.systemService
+        themeSource: pill.launcherService && pill.launcherService.serviceMode && pill.launcherService.themeState ? pill.launcherService.themeState : null
+        open: pill.surface === "wallpaper"
+        morphCloseness: pill.morphCloseness
+        onRequestBack: pill.surface = "appearance"
+        onRequestClose: pill.dismiss()
+    }
     SystemPanel {
         id: systemPanel
         anchors.fill: parent
@@ -241,6 +339,7 @@ Item {
         open: pill.surface === "system"
         morphCloseness: pill.morphCloseness
         onRequestBack: pill.surface = "mixer"
+        onRequestAppearance: pill.openAppearance()
         onRequestClose: pill.dismiss()
     }
 }

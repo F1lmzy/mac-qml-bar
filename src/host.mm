@@ -5,6 +5,8 @@
 #include <QElapsedTimer>
 #include <QKeyEvent>
 #include <QQuickItem>
+#include "services/launcher.h"
+#include "services/system.h"
 #include <QScreen>
 #include <memory>
 #include "host.h"
@@ -24,6 +26,14 @@
 - (BOOL)canBecomeKeyWindow { return NO; }
 - (BOOL)canBecomeMainWindow { return NO; }
 @end
+
+// ListView delegates have visual parents but need not be QObject children.
+static QQuickItem *findVisualItem(QQuickItem *item, const QString &name) {
+    if (item->objectName() == name) return item;
+    for (auto *child : item->childItems())
+        if (auto *found = findVisualItem(child, name)) return found;
+    return nullptr;
+}
 
 static NSWindow *nativeWindow(QQuickWindow &view) {
     return [(__bridge NSView *)reinterpret_cast<void *>(view.winId()) window];
@@ -83,6 +93,8 @@ Host::Host(QQuickWindow &view, QQuickItem &pill, int topOffset, bool selfTest)
     connect(root, &QQuickItem::widthChanged, this, &Host::syncGeometry);
     connect(root, &QQuickItem::heightChanged, this, &Host::syncGeometry);
     connect(root, SIGNAL(expandedChanged()), this, SLOT(updateMode()));
+    // A shortcut must refocus an already-expanded launcher too.
+    connect(root, SIGNAL(launcherPresented()), this, SLOT(updateMode()));
     connect(root, SIGNAL(hoverHeldChanged()), this, SLOT(syncGeometry()));
     connect(root, SIGNAL(transitioningChanged()), this, SLOT(syncGeometry()));
     connect(qGuiApp, &QGuiApplication::primaryScreenChanged, this, &Host::syncGeometry);
@@ -169,7 +181,7 @@ void Host::updateMode() {
     if (expanded) {
         suppressHoverUntilExit = false;
         NSRunningApplication *front = NSWorkspace.sharedWorkspace.frontmostApplication;
-        if (front.processIdentifier != NSProcessInfo.processInfo.processIdentifier)
+        if (!previousApplication && front.processIdentifier != NSProcessInfo.processInfo.processIdentifier)
             previousApplication = (__bridge_retained void *)front;
         window.level = NSFloatingWindowLevel;
         window.ignoresMouseEvents = NO;
@@ -228,11 +240,17 @@ void Host::runSelfTest(const QString &directory) {
             return view.size() == size.toSize() && root->size() == size;
         };
         switch (*phase) {
-        case 0:
-            if (!view.property("nativeBridgeReady").toBool() || !view.property("nativeAudioReady").toBool() || !view.property("nativeSystemReady").toBool()) return;
+        case 0: {
+            if (!view.property("nativeBridgeReady").toBool() || !view.property("nativeAudioReady").toBool() || !view.property("nativeSystemReady").toBool() || !view.property("nativeLauncherReady").toBool()) return;
             check(view.property("nativeBridgeReady").toBool(), "packaged Swift callback reaches QML");
             check(view.property("nativeAudioReady").toBool(), "packaged Audio test fixture reaches QML without hardware");
-        check(view.property("nativeSystemReady").toBool(), "packaged system fixtures reach QML without permissions");
+            check(view.property("nativeSystemReady").toBool(), "packaged system fixtures reach QML without permissions");
+            auto *system = qobject_cast<System *>(root->property("systemService").value<QObject *>());
+            auto *clock = root->findChild<QQuickItem *>("restClock");
+            const auto palette = system ? system->theme().value("palette").toMap() : QVariantMap{};
+            const auto label = palette.value("bar").toMap().value("label").toString();
+            check(system && clock && !label.isEmpty() && clock->property("color").value<QColor>() == QColor(label),
+                  "packaged Swift palette reaches Qt and recolors the resting clock");
             check(window.level == -20, "collapsed native level");
             check(window.collectionBehavior & NSWindowCollectionBehaviorCanJoinAllSpaces, "joins Spaces");
             check(atSize(collapsed), "collapsed frame fits Ricelin pill");
@@ -242,6 +260,7 @@ void Host::runSelfTest(const QString &directory) {
             capture("collapsed");
             root->setProperty("hovered", true);
             break;
+        }
         case 1:
             if (!atSize(hovered) || root->findChild<QQuickItem *>("hoverContent")->opacity() < 0.99) return;
             check(window.level == NSFloatingWindowLevel, "hover window raised to animate while occluded");
@@ -298,6 +317,102 @@ void Host::runSelfTest(const QString &directory) {
         }
         case 7:
             if (!atSize(collapsed) || root->property("transitioning").toBool()) return;
+            QMetaObject::invokeMethod(root, "openLauncher");
+            break;
+        case 8: {
+            const auto launcher = root->property("launcherSize").toSizeF();
+            auto *surface = root->findChild<QQuickItem *>("launcherSurface");
+            auto *input = root->findChild<QQuickItem *>("launcherInput");
+            if (!atSize(launcher) || !surface || surface->opacity() < 0.99) return;
+            check(view.property("nativeLauncherReady").toBool(), "packaged Rust fixture reaches QML");
+            check(atSize(launcher) && panel.visible, "launcher morph has synchronized native geometry and catcher");
+            check(window.level == NSFloatingWindowLevel, "launcher raised above ordinary windows");
+            check(input && input->hasActiveFocus(), "launcher search input owns Qt focus");
+            capture("launcher");
+            input->setProperty("text", "Safari");
+            break;
+        }
+        case 9: {
+            auto *launcher = qobject_cast<LauncherService *>(root->property("launcherService").value<QObject *>());
+            auto *list = root->findChild<QQuickItem *>("launcherResults");
+            if (!launcher || launcher->searching() || !list || list->property("count").toInt() != 1) return;
+            auto *icon = findVisualItem(list, QStringLiteral("launcherResultIcon"));
+            if (!icon || icon->property("status").toInt() != 1) {
+                if (elapsed->elapsed() > 4800)
+                    qWarning() << "launcher icon not ready" << icon
+                               << (icon ? icon->property("status") : QVariant())
+                               << launcher->results();
+                return;
+            } // Image.Ready
+            check(icon->property("source").toUrl().toString().startsWith("image://maccer-icons/"),
+                  "packaged QML displays maccer pixel icon without PNG decoding");
+            check(launcher->query() == "Safari", "native QML field sends search text to Rust");
+            check(launcher->results().first().toMap().value("title").toString() == "Safari",
+                  "Rust search returns the selected app to QML");
+            capture("launcher-search");
+            QKeyEvent enter(QEvent::KeyPress, Qt::Key_Return, Qt::NoModifier);
+            QCoreApplication::sendEvent(&view, &enter);
+            break;
+        }
+        case 10:
+            if (root->property("expanded").toBool() || !atSize(collapsed) || root->property("transitioning").toBool()) return;
+            check(!panel.visible, "fixture activation closes the launcher through the Rust outcome");
+            QMetaObject::invokeMethod(root, "openLauncher");
+            break;
+        case 11: {
+            const auto launcher = root->property("launcherSize").toSizeF();
+            auto *surface = root->findChild<QQuickItem *>("launcherSurface");
+            if (!atSize(launcher) || !surface || surface->opacity() < 0.99) return;
+            auto *click = [NSEvent mouseEventWithType:NSEventTypeLeftMouseDown
+                location:NSZeroPoint modifierFlags:0 timestamp:0 windowNumber:0
+                context:nil eventNumber:0 clickCount:1 pressure:1];
+            [(DismissView *)panel.contentView mouseDown:click];
+            check(!root->property("expanded").toBool(), "outside click dismisses launcher");
+            break;
+        }
+        case 12:
+            if (!atSize(collapsed) || root->property("transitioning").toBool()) return;
+            check(window.level == -20 && !panel.visible, "launcher close restores idle stacking and removes catcher");
+            QMetaObject::invokeMethod(root, "openAppearance");
+            break;
+        case 13: {
+            const auto appearance = root->property("appearanceSize").toSizeF();
+            auto *surface = root->findChild<QQuickItem *>("appearanceSurface");
+            if (!atSize(appearance) || !surface || surface->opacity() < 0.99) return;
+            check(panel.visible && window.level == NSFloatingWindowLevel,
+                  "appearance morph has native geometry, stacking and catcher");
+            auto *theme = findVisualItem(surface, QStringLiteral("themeChoice_fixture"));
+            check(theme && theme->property("current").toBool(), "appearance grid marks the observed theme");
+            capture("appearance");
+            QMetaObject::invokeMethod(root, "openWallpaper");
+            break;
+        }
+        case 14: {
+            const auto wallpaper = root->property("wallpaperSize").toSizeF();
+            auto *surface = root->findChild<QQuickItem *>("wallpaperSurface");
+            if (!atSize(wallpaper) || !surface || surface->opacity() < 0.99) return;
+            // The strip opens focused on the background mac-themer remembers.
+            auto *tile = findVisualItem(surface, QStringLiteral("wallpaperChoice_0"));
+            check(surface->property("focusIndex").toInt() == 0,
+                  "wallpaper carousel focuses the observed background");
+            check(tile != nullptr, "wallpaper carousel renders the observed background");
+            capture("wallpaper");
+            QKeyEvent escape(QEvent::KeyPress, Qt::Key_Escape, Qt::NoModifier);
+            QCoreApplication::sendEvent(&view, &escape);
+            check(root->property("surface").toString() == "appearance",
+                  "Escape steps back from wallpapers to themes");
+            break;
+        }
+        case 15: {
+            if (!root->property("expanded").toBool()) return;
+            QKeyEvent escape(QEvent::KeyPress, Qt::Key_Escape, Qt::NoModifier);
+            QCoreApplication::sendEvent(&view, &escape);
+            check(!root->property("expanded").toBool(), "Escape dismisses appearance controls");
+            break;
+        }
+        case 16:
+            if (!atSize(collapsed) || root->property("transitioning").toBool()) return;
+            check(window.level == -20 && !panel.visible, "appearance close restores idle stacking and removes catcher");
             timer->stop();
             QCoreApplication::exit(*failed ? 1 : 0);
             return;

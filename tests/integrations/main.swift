@@ -5,7 +5,23 @@ func runIntegrationFixtures() throws {
         try runPrivacyTests()
         try runWindowManagerTests()
         try runLifecycleTests()
+        runEmptyWorkspaceTests()
         runWorkspaceEventTests()
+        try runThemeTests()
+        // Shared-service mode has no local theme watcher, catalog or helper.
+        let sharedTheme = ServiceOwnedThemeIntegration()
+        var sharedSnapshot: [String: Any] = [:]
+        sharedTheme.start { sharedSnapshot = $0 }
+        precondition(sharedSnapshot["available"] as? Bool == false)
+        precondition(sharedSnapshot["canNext"] as? Bool == false)
+        precondition(sharedSnapshot["canSelect"] as? Bool == false)
+        precondition((sharedSnapshot["themes"] as? [[String: String]])?.isEmpty == true)
+        sharedTheme.invoke("next", ["confirmed": true])
+        precondition(sharedSnapshot["lastErrorCode"] as? String == "serviceOwned")
+        sharedTheme.refresh()
+        precondition(sharedSnapshot["lastErrorCode"] as? String == "")
+        sharedTheme.stop()
+        try runThumbnailTests()
         let duplicateMonitor = Data(#"[{"monitor-id":1,"monitor-name":"A"},{"monitor-id":1,"monitor-name":"B"}]"#.utf8)
         do {
             _ = try WindowManagerModels.snapshot(workspaces: Data(#"[{"workspace":"empty","monitor-id":1,"workspace-is-visible":true}]"#.utf8),

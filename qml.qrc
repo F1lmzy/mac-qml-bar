@@ -8,6 +8,11 @@
     <file>qml/Pill.qml</file>
     <file>qml/ricelin/GlyphIcon.qml</file>
     <file>qml/ricelin/Mixer.qml</file>
+    <file>qml/ricelin/Appearance.qml</file>
+    <file>qml/ricelin/WallpaperCarousel.qml</file>
+    <file>qml/ricelin/Launcher.qml</file>
+    <file>qml/ricelin/ServicePreview.qml</file>
+    <file>qml/ricelin/SearchField.qml</file>
     <file>qml/ricelin/SystemPanel.qml</file>
     <file>qml/ricelin/PillSurface.qml</file>
     <file>qml/ricelin/Singletons/DemoState.qml</file>

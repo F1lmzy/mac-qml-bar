@@ -1,2 +1,4 @@
 build/
+/.codegraph/
+/.pi/
 .DS_Store

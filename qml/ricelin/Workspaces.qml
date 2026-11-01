@@ -12,9 +12,11 @@ Item {
     property real s: 1
     property real gap: 5 * s
     property string focusedWorkspace: ""
+    property int maximumCount: 8
+    property bool showOverflow: true
     readonly property var rows: systemService && systemService.windowManager && systemService.windowManager.workspaces
         ? systemService.windowManager.workspaces : []
-    readonly property int shownCount: Math.min(8, rows.length)
+    readonly property int shownCount: Math.min(Math.max(0, maximumCount), rows.length)
     implicitWidth: row.implicitWidth
     implicitHeight: 22 * s
     signal workspaceRequested(string id)
@@ -54,8 +56,8 @@ Item {
             }
         }
         Text {
-            visible: workspaces.rows.length > 8
-            text: "+" + (workspaces.rows.length - 8)
+            visible: workspaces.showOverflow && workspaces.rows.length > workspaces.shownCount
+            text: "+" + (workspaces.rows.length - workspaces.shownCount)
             color: Theme.dim
             font.family: Theme.font
             font.pixelSize: 9 * workspaces.s

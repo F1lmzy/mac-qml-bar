@@ -80,7 +80,15 @@ final class WindowManagerIntegration: PillIntegration {
                 let monitors = try run(["list-monitors", "--json"])
                 let windows = try run(["list-windows", "--all", "--format", "%{window-id} %{workspace} %{app-name} %{window-layout}", "--json"])
                 let focusedWS = try run(["list-workspaces", "--focused", "--json"])
-                let focusedWindow = try run(["list-windows", "--focused", "--json"])
+                let focusedWindow: Data
+                do {
+                    focusedWindow = try run(["list-windows", "--focused", "--json"])
+                } catch let error as IntegrationFailure where error.code == "nativeFailure"
+                    && error.message.trimmingCharacters(in: .whitespacesAndNewlines) == "No window is focused" {
+                    // AeroSpace exits nonzero for normal empty-workspace focus.
+                    // Only this specific response is absence, not a CLI failure.
+                    focusedWindow = Data("[]".utf8)
+                }
                 guard let focus = try WindowManagerModels.rows(focusedWS).first?["workspace"] as? String else {
                     throw IntegrationFailure("invalidResponse", "No focused workspace returned.")
                 }
@@ -108,7 +116,7 @@ final class WindowManagerIntegration: PillIntegration {
                 self.snapshot = parsed
                 var published = state
                 if parsed.focusedWindow.isEmpty, !self.lastManagedFocus.isEmpty,
-                   parsed.windows.contains(where: { $0.id == self.lastManagedFocus }) {
+                   parsed.windows.contains(where: { $0.id == self.lastManagedFocus && $0.workspace == parsed.focusedWorkspace }) {
                     published["focusedWindow"] = self.lastManagedFocus
                 }
                 self.publish(published)
