@@ -4,8 +4,8 @@ The expanded System integration contract is documented in integrations.md.
 
 ## Implemented checkpoint
 
-PLAN.md tasks 1 and 2 and the Audio service for task 3 are implemented. The
-donor audit, copied Audio ranges and MIT notice are in third_party/omacosy.
+The Swift/Qt bridge and native Audio service are implemented. The donor
+audit, copied Audio ranges and MIT notice are in third_party/omacosy.
 Real-device write and UI input verification remain opt-in.
 
 src/native/*.swift builds as libPillNative.dylib. qmake bootstraps
