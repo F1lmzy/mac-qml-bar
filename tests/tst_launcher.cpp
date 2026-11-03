@@ -700,6 +700,90 @@ private slots:
         svc.cancel();
         QCOMPARE(svc.themeState(), themeState); // Persistent state is not view authority.
     }
+
+    void serviceModeKeyboardNavigationSurvivesDetailsRequests() {
+        QString binary = qEnvironmentVariable("MACCER_SERVICE_BIN");
+        if (binary.isEmpty()) {
+            QString source = qEnvironmentVariable("MACCER_SOURCE");
+            if (source.isEmpty()) source = QDir::homePath() + QStringLiteral("/Documents/maccer");
+            binary = source + QStringLiteral("/target/debug/maccer-service");
+        }
+        if (!QFileInfo::exists(binary))
+            QSKIP("set MACCER_SERVICE_BIN to a maccer-service fixture binary to run this test");
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        const QString socket = dir.filePath(QStringLiteral("rpc"));
+        QProcess daemon;
+        struct Guard {
+            QProcess *process;
+            ~Guard() {
+                if (process->state() != QProcess::NotRunning) {
+                    process->terminate();
+                    if (!process->waitForFinished(2000)) process->kill();
+                }
+            }
+        } guard{&daemon};
+        daemon.start(binary, {QStringLiteral("--fixture"), QStringLiteral("--socket"), socket});
+        QVERIFY2(daemon.waitForStarted(5000), qPrintable(daemon.errorString()));
+        for (int i = 0; i < 300 && !QFileInfo::exists(socket); ++i) QTest::qWait(10);
+        QVERIFY(QFileInfo::exists(socket));
+
+        const QByteArray previous = qgetenv("MACCER_SERVICE_SOCKET");
+        qputenv("MACCER_SERVICE_SOCKET", socket.toUtf8());
+        LauncherService service(false);
+        if (previous.isNull()) qunsetenv("MACCER_SERVICE_SOCKET"); else qputenv("MACCER_SERVICE_SOCKET", previous);
+        QTRY_VERIFY_WITH_TIMEOUT(service.ready(), 5000);
+
+        const QString launcherQml = QFINDTESTDATA("../qml/ricelin/Launcher.qml");
+        QVERIFY(!launcherQml.isEmpty());
+        QQmlEngine engine;
+        engine.addImportPath(QFileInfo(launcherQml).absoluteDir().filePath("../modules"));
+        QQmlComponent component(&engine, QUrl::fromLocalFile(launcherQml));
+        QScopedPointer<QObject> surface(component.createWithInitialProperties({{ "service", QVariant::fromValue(&service) }}));
+        QVERIFY2(surface, qPrintable(component.errorString()));
+        QQuickWindow window;
+        window.setColor(Qt::black);
+        window.resize(480, 380);
+        auto *item = qobject_cast<QQuickItem *>(surface.data());
+        QVERIFY(item);
+        item->setParentItem(window.contentItem());
+        window.show();
+        surface->setProperty("open", true);
+        auto *field = surface->findChild<QObject *>("launcherInput");
+        QVERIFY(field);
+        QVERIFY(QMetaObject::invokeMethod(surface.data(), "focusField"));
+        field->setProperty("text", QStringLiteral("a"));
+        QTRY_VERIFY_WITH_TIMEOUT(!service.searching(), 5000);
+        QTRY_VERIFY_WITH_TIMEOUT(service.results().size() > 2, 5000);
+        QCOMPARE(surface->property("selectedIndex").toInt(), 0);
+
+        // Pick a row whose selection starts a details request. The request emits
+        // an immediate state notification even though the displayed rows did not
+        // change; that notification must not reset the cursor to the first row.
+        int target = -1;
+        // Use the rows the surface displays: provider-menu entries are filtered
+        // out for a query that does not name them, so service indices shift.
+        const QVariantList rows = surface->property("results").toList();
+        for (int i = 1; i < rows.size(); ++i) {
+            if (rows[i].toMap().value("detailsAvailable").toBool()) { target = i; break; }
+        }
+        QVERIFY2(target > 0, "fixture must expose a details-capable row below the first");
+        QVERIFY(QMetaObject::invokeMethod(surface.data(), "select", Q_ARG(QVariant, target)));
+        QCOMPARE(surface->property("selectedIndex").toInt(), target);
+        QTRY_VERIFY_WITH_TIMEOUT(!service.previewLoading(), 5000);
+        QCOMPARE(surface->property("selectedIndex").toInt(), target);
+        if (target + 1 < rows.size()) {
+            QVERIFY(QMetaObject::invokeMethod(surface.data(), "move", Q_ARG(QVariant, 1)));
+            QCOMPARE(surface->property("selectedIndex").toInt(), target + 1);
+            target += 1;
+        }
+
+        // The same path through a real key press, which is what the pill sees.
+        QTest::keyClick(&window, Qt::Key_Up);
+        QTRY_COMPARE_WITH_TIMEOUT(surface->property("selectedIndex").toInt(), target - 1, 5000);
+        QTest::keyClick(&window, Qt::Key_Down);
+        QTRY_COMPARE_WITH_TIMEOUT(surface->property("selectedIndex").toInt(), target, 5000);
+    }
 };
 
 QTEST_MAIN(LauncherServiceTest)

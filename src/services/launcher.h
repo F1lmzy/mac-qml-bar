@@ -17,10 +17,10 @@ class LauncherService final : public QObject {
     Q_PROPERTY(bool serviceMode READ serviceMode CONSTANT)
     Q_PROPERTY(bool providerScoped READ providerScoped NOTIFY stateChanged)
     Q_PROPERTY(bool ready READ ready NOTIFY stateChanged)
-    Q_PROPERTY(QVariantList results READ results NOTIFY stateChanged)
+    Q_PROPERTY(QVariantList results READ results NOTIFY resultsChanged)
     Q_PROPERTY(bool searching READ searching NOTIFY stateChanged)
     Q_PROPERTY(bool busy READ busy NOTIFY stateChanged)
-    Q_PROPERTY(QString query READ query NOTIFY stateChanged)
+    Q_PROPERTY(QString query READ query NOTIFY queryChanged)
     Q_PROPERTY(QString lastError READ lastError NOTIFY stateChanged)
     Q_PROPERTY(QString shortcutError READ shortcutError NOTIFY stateChanged)
     Q_PROPERTY(QString outputTitle READ outputTitle NOTIFY stateChanged)
@@ -64,6 +64,15 @@ public:
 
 signals:
     void stateChanged();
+    // Both of these are emitted only when their own value changes. Poll-driven
+    // notifications (icons, previews, busy flags) must not re-evaluate search
+    // rows or the query in QML bindings.
+    void queryChanged();
+    // Emitted only when the displayed rows actually change. Search and action
+    // state notifications are frequent (preview loading, busy flags), and a
+    // results notification on every one of them would make QML reconcile the
+    // selection against an unchanged snapshot and reset keyboard navigation.
+    void resultsChanged();
     void themeStateChanged();
     void closeRequested();
     void queryRequested(const QString &query);
@@ -79,6 +88,7 @@ private slots:
 private:
     friend class LauncherServiceTest;
     bool sendSearch(quint64 request);
+    void setResults(const QVariantList &next);
     QString confirmationFor(const QString &provider, const QString &id, const QString &action) const;
     void dispatchActivation(const QString &provider, const QString &id, const QString &action, bool confirmed);
     void clearConfirmation();

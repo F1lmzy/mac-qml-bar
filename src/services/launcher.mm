@@ -202,6 +202,12 @@ bool LauncherService::sendSearch(quint64 request) {
     return true;
 }
 
+void LauncherService::setResults(const QVariantList &next) {
+    if (m_results == next) return;
+    m_results = next;
+    emit resultsChanged();
+}
+
 void LauncherService::resetDetails() {
     m_detailProvider.clear();
     m_detailId.clear();
@@ -277,7 +283,10 @@ void LauncherService::setQuery(const QString &query) {
         return;
     }
     ++m_request;
-    m_query = query;
+    if (m_query != query) {
+        m_query = query;
+        emit queryChanged();
+    }
     if (m_serviceMode) {
         // Retain display-only rows, cached icons and preview until replacement.
         // Revoke their action/detail identity even if the new search fails.
@@ -286,7 +295,7 @@ void LauncherService::setQuery(const QString &query) {
         m_detailId.clear();
     } else {
         resetDetails();
-        m_results.clear();
+        setResults({});
     }
     m_pendingConfirmation.clear();
     m_pendingIcons.clear();
@@ -383,7 +392,7 @@ void LauncherService::home() {
     ++m_request;
     resetDetails();
     m_pendingConfirmation.clear();
-    m_results.clear();
+    setResults({});
     m_pendingIcons.clear();
     m_lastError.clear();
     m_outputTitle.clear();
@@ -415,7 +424,7 @@ void LauncherService::cancel() {
             maccer_agent_string_free(error);
         }
     }
-    m_results.clear();
+    setResults({});
     m_pendingIcons.clear();
     m_searching = false;
     m_busy = false;
@@ -527,7 +536,7 @@ void LauncherService::applyEvent(const QByteArray &json) {
         ++m_request;
         resetDetails();
         m_pendingConfirmation.clear();
-        m_results.clear();
+        setResults({});
         m_pendingIcons.clear();
         m_searching = true;
         const QJsonObject message{{"op", "refresh"}, {"request", static_cast<qint64>(m_request)}, {"search_request", static_cast<qint64>(oldRequest)}};
@@ -575,7 +584,7 @@ void LauncherService::applyEvent(const QByteArray &json) {
             cacheNativeIcon(item.value("iconSource").toString());
             entry = item;
         }
-        m_results = next;
+        setResults(next);
         m_resultRequest = requestValue.toVariant().toULongLong();
         QStringList errors;
         const QJsonValue errorsValue = event.value("errors");
@@ -605,7 +614,9 @@ void LauncherService::applyEvent(const QByteArray &json) {
             QVariantMap item = m_results[i].toMap();
             if (item.value("provider").toString() == provider && item.value("id").toString() == id) {
                 item.insert("iconSource", source);
-                m_results[i] = item;
+                QVariantList updated = m_results;
+                updated[i] = item;
+                setResults(updated);
                 emit stateChanged();
                 return;
             }
