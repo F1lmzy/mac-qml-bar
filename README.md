@@ -39,7 +39,7 @@ Follow the [Maccer setup and operations guide](https://github.com/F1lmzy/maccer/
 
 ## Theme and embedded Appearance
 
-In shared mode, Maccer owns the active palette and theme catalog. Pill's separate Appearance catalog and mutations are disabled; use Themes in the launcher. The following Appearance and wallpaper controls describe embedded mode.
+In shared mode, Maccer owns the active palette and theme catalog. The pill's palette icon opens the shared Themes page: a grid of palette cards filled from each theme background, showing its resolved swatches, name and variant, with the active palette ringed. Left/Right move one card, Up/Down a row, Return stages the service confirmation and Escape returns home; typing filters the catalog. Pill's separate Appearance catalog and mutations stay embedded-only, and the following Appearance and wallpaper controls describe that mode.
 
 The pill follows mac-themer's active palette from `~/.config/macthemer/current.json`, including text, accents, surfaces, selection colors and bar opacity. Rest, hover, mixer, launcher and system controls share it. Theme changes update the running UI through a directory watcher, with two-second reconciliation as a fallback. Nothing is copied from the mac-themer checkout or applied on startup.
 
@@ -51,9 +51,11 @@ Carousel previews are cached, so the strip paints immediately instead of decodin
 
 ## Embedded launcher
 
-Option-Space or your configured maccer shortcut opens a 480x380 launcher that morphs from the pill. Click the app-window glyph in the hovered pill to open it without a shortcut. After quitting the older pill instance, use `./scripts/run.sh --show-launcher` to open it immediately. Quit standalone maccer if it owns the same shortcut; registration failures appear in the launcher footer.
+Option-Space or your configured maccer shortcut opens a 480x380 launcher that morphs from the pill (480x468 while the shared Themes grid is open). Click the app-window glyph in the hovered pill to open it without a shortcut. After quitting the older pill instance, use `./scripts/run.sh --show-launcher` to open it immediately. Quit standalone maccer if it owns the same shortcut; registration failures appear in the launcher footer.
 
-The app links maccer's Rust providers through a C ABI and a QML singleton, with no GPUI window or daemon. Search, ranking, provider prefixes, history and actions reuse maccer's configuration. Return activates, arrows navigate, Tab uses the secondary action, Cmd-K opens actions, and Cmd-P opens the provider picker. Escape returns from actions/output, then clears the query, then closes.
+The app links maccer's Rust providers through a C ABI and a QML singleton, with no GPUI window or daemon. Search, ranking, provider prefixes, history and actions reuse maccer's configuration. Return activates, arrows navigate, Tab uses the secondary action, Cmd-K opens actions, and Cmd-P opens the provider picker. Escape returns from actions/output, then clears the query, then closes. Qt reports Command as `ControlModifier` on macOS, which is the mapping the Cmd shortcuts and Ctrl-N/Ctrl-P moves use.
+
+Results show application names without bundle paths. Provider-menu rows are navigation rather than matches, so they only appear for an empty query or when the typed text begins the provider name (`find` now lists Finder first instead of Themes). Application rows are additionally ordered by how their title matches the query, ahead of Finder.app helpers such as AirDrop.
 
 Clipboard capture follows maccer configuration and runs while the pill is resident. Unmarked passwords may enter its in-memory history; disable `[providers.clipboard].enabled` and restart to opt out. Paste, file previews and dragging are not integrated yet. Real IME input and native app activation still need interactive verification. See [the launcher contract and verification](docs/launcher.md).
 
