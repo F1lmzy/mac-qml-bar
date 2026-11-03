@@ -3,6 +3,8 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 root="$PWD"
 maccer_source="${MACCER_SOURCE:-$HOME/Documents/maccer}"
+source "$(dirname "$0")/maccer-layout.sh"
+maccer_layout "$maccer_source"
 bundle="build/app/PillSpike.app"
 library="$bundle/Contents/Frameworks/libPillNative.dylib"
 launcher_library="$bundle/Contents/Frameworks/liblauncher_agent.dylib"
@@ -10,7 +12,7 @@ test -f "$library"
 test -f "$launcher_library"
 cmp build/native/libPillNative.dylib "$library"
 cmp build/launcher/liblauncher_agent.dylib "$launcher_library"
-cmp "$maccer_source"/crates/launcher-agent/include/maccer_agent.h build/launcher/include/maccer_agent.h
+cmp "$MACCER_HEADER" build/launcher/include/maccer_agent.h
 cmp third_party/omacosy/LICENSE "$bundle/Contents/Resources/licenses/omacosy/LICENSE"
 cmp third_party/ricelin/LICENSE "$bundle/Contents/Resources/licenses/ricelin/LICENSE"
 cmp "$maccer_source"/LICENSE "$bundle/Contents/Resources/licenses/maccer/LICENSE"

@@ -6,11 +6,15 @@ LAUNCHER_BUILD_DIR = $$clean_path($$OUT_PWD/../launcher)
 LAUNCHER_LIBRARY = $$LAUNCHER_BUILD_DIR/liblauncher_agent.dylib
 LAUNCHER_HEADER = $$LAUNCHER_BUILD_DIR/include/maccer_agent.h
 LAUNCHER_SCRIPT = $$PWD/../../scripts/build-launcher.sh
+# Maccer consolidated its crates into `launcher`; older checkouts still keep
+# the agent in `launcher-agent`. Both expose the same C ABI header.
+MACCER_HEADER = $$MACCER_SOURCE/crates/launcher/include/maccer_agent.h
+!exists($$MACCER_HEADER): MACCER_HEADER = $$MACCER_SOURCE/crates/launcher-agent/include/maccer_agent.h
 MACCER_DEPS = $$MACCER_SOURCE/Cargo.toml $$MACCER_SOURCE/Cargo.lock
 MACCER_DEPS += $$system(/usr/bin/find $$shell_quote($$MACCER_SOURCE/crates) -type f -name '*.rs' -print)
 MACCER_DEPS += $$system(/usr/bin/find $$shell_quote($$MACCER_SOURCE/crates) -type f -name Cargo.toml -print)
 MACCER_DEPS += $$system(/usr/bin/find $$shell_quote($$MACCER_SOURCE/config) -type f -name '*.toml' -print)
-MACCER_DEPS += $$MACCER_SOURCE/crates/launcher-agent/include/maccer_agent.h
+MACCER_DEPS += $$MACCER_HEADER
 
 INCLUDEPATH += $$LAUNCHER_BUILD_DIR/include
 DEPENDPATH += $$LAUNCHER_BUILD_DIR/include
