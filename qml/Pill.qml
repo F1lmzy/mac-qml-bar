@@ -30,7 +30,7 @@ Item {
     readonly property size hoverSize: Qt.size(hoverRow.implicitWidth + 2 * hoverPad, hoverH)
     readonly property size mixerSize: Qt.size(93 * 4 * s, mixerH)
     readonly property size systemSize: Qt.size(93 * 4 * s, systemH)
-    readonly property size launcherSize: Qt.size(480 * s, 380 * s)
+    readonly property size launcherSize: Qt.size(480 * s, (launcherThemes ? 468 : 380) * s)
     // Height fits the 3x2 grid of square cards with no dead space: the card is
     // the column width, so two rows plus one gap have to equal the content area.
     readonly property size appearanceSize: Qt.size(420 * s, 420 * s)
@@ -43,6 +43,9 @@ Item {
     property real morphRadius: expanded ? openCorner : restCorner
     property string lastMode: "rest"
     property bool hoverHop: false
+    // The shared-service themes page is a card grid. It needs two rows of
+    // square cards to be usable, so the launcher grows while it is showing.
+    property bool launcherThemes: false
     readonly property real morphCloseness: {
         const d = Math.max(Math.abs(width - targetW), Math.abs(height - targetH))
         return 1 - Math.min(1, d / (110 * s))
@@ -60,7 +63,21 @@ Item {
         Qt.callLater(launcherPanel.focusField)
         launcherPresented()
     }
-    function openAppearance() { surface = "appearance"; forceActiveFocus() }
+    function openThemes() {
+        launcherPanel.pendingThemes = true
+        if (surface === "launcher") {
+            launcherPanel.resetQuery("")
+            Qt.callLater(launcherPanel.openPendingThemes)
+        } else surface = "launcher"
+        Qt.callLater(launcherPanel.focusField)
+        launcherPresented()
+    }
+    function openAppearance() {
+        // Shared mode owns the catalog and applies through Maccer, so the
+        // launcher's Themes route replaces the local Appearance surface.
+        if (launcherService && launcherService.serviceMode) openThemes()
+        else { surface = "appearance"; forceActiveFocus() }
+    }
     function openWallpaper() { surface = "wallpaper"; forceActiveFocus() }
     function toggleLauncher() { if (surface === "launcher") dismiss(); else openLauncher() }
     Connections {
@@ -70,7 +87,7 @@ Item {
         // already-visible launcher, so this is open, not toggle.
         function onShowRequested() { pill.openLauncher() }
     }
-    function dismiss() { surface = ""; hovered = false; hoverHeld = false; leaveDelay.stop() }
+    function dismiss() { surface = ""; hovered = false; hoverHeld = false; launcherThemes = false; leaveDelay.stop() }
     onHoveredChanged: {
         if (hovered) { leaveDelay.stop(); hoverHeld = true }
         else leaveDelay.restart()
@@ -309,6 +326,7 @@ Item {
         open: pill.surface === "launcher"
         morphCloseness: pill.morphCloseness
         onRequestClose: pill.dismiss()
+        onGridModeChanged: pill.launcherThemes = gridMode
     }
     Appearance {
         id: appearancePanel

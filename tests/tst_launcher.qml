@@ -73,6 +73,20 @@ TestCase {
         return {id: id, provider: "apps", title: title, subtitle: "/Applications/" + title + ".app",
                 iconSource: "", iconText: "", actions: [{id: "open", title: "Open"}, {id: "reveal", title: "Reveal in Finder"}]}
     }
+    function menuRow(id, title) {
+        return {id: id, provider: "menu", title: title, subtitle: "", iconSource: "", iconText: "\u203A",
+                actions: [{id: "open", title: "Open"}]}
+    }
+    function themeRow(slug, title, background, foreground, accent) {
+        return {id: "themes:" + slug, provider: "themes", title: title, subtitle: slug + " \u00b7 dark",
+                iconSource: "", iconText: "\u25D0",
+                content: [{type: "colorPalette", fallbackText: title + " palette", colors: [
+                    {role: "background", value: background},
+                    {role: "foreground", value: foreground},
+                    {role: "accent", value: accent}]}],
+                data: {type: "themeSummary", schemaVersion: 1, slug: slug, variant: "dark"},
+                actions: [{id: "apply", title: "Apply theme", confirmation: "Apply " + title + "? Wallpaper unchanged."}]}
+    }
     function panel() { return findChild(pill, "launcherSurface") }
     function field() { return findChild(pill, "launcherInput") }
     function init() {
@@ -111,7 +125,9 @@ TestCase {
         service.serviceMode = true
         service.themeState = {available: true, name: "Shared palette", slug: "shared", canSelect: false,
             canNext: false, canResyncWallpaper: false, canSetBackground: false, themes: [], wallpapers: []}
-        pill.openAppearance()
+        // Service mode routes the palette button to the launcher's Themes route,
+        // but the local surface must still stay read-only if it is shown.
+        pill.surface = "appearance"
         const appearance = findChild(pill, "appearanceSurface")
         verify(appearance !== null)
         compare(appearance.themeState.name, "Shared palette")
@@ -138,7 +154,7 @@ TestCase {
         compare(preview.textFor(service.previewContent[0]), "<b>literal future</b>")
         keyClick(Qt.Key_Down)
         tryVerify(() => service.detailCalls[service.detailCalls.length - 1].id === "terminal")
-        keyClick(Qt.Key_P, Qt.MetaModifier | Qt.ShiftModifier)
+        keyClick(Qt.Key_P, Qt.ControlModifier | Qt.ShiftModifier)
         tryCompare(preview, "visible", false)
         compare(service.previewContent.length, 0)
         keyClick(Qt.Key_Return)
@@ -166,11 +182,11 @@ TestCase {
         compare(preview.height, height)
         keyClick(Qt.Key_Return)
         keyClick(Qt.Key_Tab)
-        keyClick(Qt.Key_K, Qt.MetaModifier)
+        keyClick(Qt.Key_K, Qt.ControlModifier)
         compare(service.activations.length, 0)
         compare(panel().actionMode, false)
         // Hiding a preview is still explicit even during a pending search.
-        keyClick(Qt.Key_P, Qt.MetaModifier | Qt.ShiftModifier)
+        keyClick(Qt.Key_P, Qt.ControlModifier | Qt.ShiftModifier)
         compare(service.previewContent.length, 0)
         compare(preview.visible, false)
     }
@@ -219,7 +235,7 @@ TestCase {
         compare(field().activeFocus, true)
     }
     function test_actionsAndEscapeUnwind() {
-        keyClick(Qt.Key_K, Qt.MetaModifier)
+        keyClick(Qt.Key_K, Qt.ControlModifier)
         compare(panel().actionMode, true)
         keyClick(Qt.Key_Down)
         keyClick(Qt.Key_Return)
@@ -238,7 +254,7 @@ TestCase {
     function test_unicodeAndProviderPicker() {
         field().text = "日本語 café 🚀"
         compare(service.query, "日本語 café 🚀")
-        keyClick(Qt.Key_P, Qt.MetaModifier)
+        keyClick(Qt.Key_P, Qt.ControlModifier)
         compare(service.query, ";")
         service.queryRequested("/apps ")
         compare(field().text, "/apps ")
@@ -291,14 +307,100 @@ TestCase {
     }
     function test_providerPickerUsesHomeInServiceMode() {
         service.serviceMode = true
-        keyClick(Qt.Key_P, Qt.MetaModifier)
+        keyClick(Qt.Key_P, Qt.ControlModifier)
         compare(service.homeCalls, 1)
         verify(service.query !== ";")
     }
     function test_embeddedProviderPickerStaysSemicolon() {
-        keyClick(Qt.Key_P, Qt.MetaModifier)
+        keyClick(Qt.Key_P, Qt.ControlModifier)
         compare(service.query, ";")
         compare(service.homeCalls, 0)
+    }
+    function test_searchDropsProviderMenuAndPrefersApplicationNames() {
+        service.results = [menuRow("themes", "Themes"), row("airdrop", "AirDrop"),
+                           row("finder", "Finder"), row("findmy", "Find My")]
+        field().text = "find"
+        tryCompare(panel(), "queryText", "find")
+        // The provider row was matched through its long description by the
+        // backend; navigation rows must not outrank real application hits.
+        compare(panel().results.length, 3)
+        compare(panel().results[0].title, "Finder")
+        compare(panel().results[1].title, "Find My")
+        // Typing a provider name still offers its page.
+        field().text = "themes"
+        tryCompare(panel(), "queryText", "themes")
+        compare(panel().results[0].provider, "menu")
+        compare(panel().results[0].id, "themes")
+    }
+    function test_applicationRowsRankByTitleMatch() {
+        service.results = [row("computer", "Computer"), row("terminal", "Terminal"),
+                           row("ticket", "Ticket Viewer")]
+        field().text = "term"
+        tryCompare(panel(), "queryText", "term")
+        compare(panel().results[0].title, "Terminal")
+        compare(panel().results[1].title, "Computer") // "compuTER" contains the query.
+    }
+    function test_sharedThemesRenderAsGridCardsWithArrowNavigation() {
+        service.serviceMode = true
+        service.providerScoped = true
+        service.themeState = {available: true, name: "Gruvbox", slug: "gruvbox", themes: [], wallpapers: []}
+        service.results = [
+            themeRow("catppuccin", "Catppuccin", "#1e1e2e", "#cdd6f4", "#cba6f7"),
+            themeRow("gruvbox", "Gruvbox", "#282828", "#ebdbb2", "#fe8019"),
+            themeRow("osaka", "Osaka Jade", "#101c18", "#c1c497", "#509475"),
+            themeRow("tokyo", "Tokyo Night", "#1a1b26", "#c0caf5", "#7aa2f7"),
+            themeRow("nord", "Nord", "#2e3440", "#d8dee9", "#88c0d0")
+        ]
+        const surface = panel()
+        tryCompare(surface, "gridMode", true)
+        const grid = findChild(pill, "launcherThemes")
+        verify(grid !== null)
+        tryCompare(grid, "visible", true)
+        compare(findChild(pill, "launcherResults").visible, false)
+        compare(grid.count, 5)
+        compare(grid.currentIndex, 0)
+        // A card is filled from the theme's own background and exposes its
+        // palette, exactly like the Appearance grid.
+        const gruvbox = findChild(surface, "themeCell_gruvbox")
+        verify(gruvbox !== null)
+        compare(gruvbox.currentTheme, true)
+        compare(String(gruvbox.cardBackground).toLowerCase(), "#282828")
+        compare(String(gruvbox.cardForeground).toLowerCase(), "#ebdbb2")
+        compare(surface.themeDots(service.results[1]).length, 3)
+        // Left/Right move one card; Up/Down move a whole three-column row.
+        keyClick(Qt.Key_Right)
+        compare(surface.selectedIndex, 1)
+        keyClick(Qt.Key_Down)
+        compare(surface.selectedIndex, 4)
+        keyClick(Qt.Key_Right)
+        compare(surface.selectedIndex, 4) // Clamped to the catalog.
+        keyClick(Qt.Key_Up)
+        compare(surface.selectedIndex, 1)
+        // Return stages the service confirmation; nothing is applied yet.
+        keyClick(Qt.Key_Return)
+        compare(surface.confirming, true)
+        compare(service.pendingConfirmation.action, "apply")
+        compare(service.activations.length, 0)
+        keyClick(Qt.Key_Down) // Moving discards the staged consent.
+        compare(surface.confirming, false)
+        compare(surface.selectedIndex, 4)
+    }
+    function test_sharedPaletteButtonOpensThemesProvider() {
+        service.serviceMode = true
+        service.results = [menuRow("themes", "Themes")]
+        service.activations = []
+        pill.openAppearance()
+        compare(pill.surface, "launcher")
+        tryVerify(() => service.activations.length === 1)
+        compare(service.activations[0].provider, "menu")
+        compare(service.activations[0].id, "themes")
+        compare(service.activations[0].action, "open")
+        compare(panel().pendingThemes, false)
+        // Embedded mode still has its own catalog surface.
+        service.serviceMode = false
+        service.activations = []
+        pill.openAppearance()
+        compare(pill.surface, "appearance")
     }
     function confirmedTheme(id, title, prompt) {
         return {id: id, provider: "themes", title: title, subtitle: "", iconSource: "", iconText: "",

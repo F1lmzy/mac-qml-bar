@@ -23,6 +23,8 @@ Item {
     default property alias rightContent: rightSlot.data
 
     signal moved(int delta)
+    // Emitted only for user edits, so programmatic resets do not look like typing.
+    signal edited()
     signal accepted()
     signal dismissed()
     signal keyPressed(var event)
@@ -44,6 +46,7 @@ Item {
         placeholderText: root.placeholder
         placeholderTextColor: Theme.faint
         selectByMouse: true
+        onTextEdited: root.edited()
         selectionColor: Theme.selectionBg
         selectedTextColor: Theme.selectionText
         Keys.onPressed: (e) => {
